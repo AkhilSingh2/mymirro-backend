@@ -1,0 +1,12 @@
+[build]
+builder = "dockerfile"
+
+[deploy]
+startCommand = "./start.sh"
+healthcheckPath = "/api/v1/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+[environments.production]
+# Production environment variables will be set in Railway dashboard 
