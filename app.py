@@ -5,6 +5,10 @@ from flask_restx import Api, Resource, fields
 import logging
 from typing import Dict, List, Tuple, Optional
 
+# Setup logging first
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Graceful import for color analysis
 try:
     from color_analysis_api import EnhancedColorAnalysisAPI
@@ -15,10 +19,6 @@ except ImportError as e:
     logger.warning(f"⚠️ Color Analysis API not available: {e}")
     COLOR_ANALYSIS_AVAILABLE = False
     color_api = None
-
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
