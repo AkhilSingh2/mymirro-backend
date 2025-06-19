@@ -27,7 +27,7 @@ COPY phase1_supabase_outfits_generator.py ./
 COPY phase2_supabase_similar_outfits_api.py ./
 COPY phase3_supabase_similar_products_api.py ./
 COPY start.sh ./
-COPY "Colour map.xlsx" ./
+COPY ["Colour map.xlsx", "./"]
 
 # Create directories and user
 RUN mkdir -p data/user_recommendations && \
