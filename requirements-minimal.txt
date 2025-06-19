@@ -1,0 +1,31 @@
+# Minimal requirements for Railway deployment
+# Core Web Framework
+Flask==2.3.3
+Flask-CORS==4.0.0
+flask-restx==1.3.0
+Werkzeug==2.3.7
+gunicorn>=20.1.0
+
+# Essential Data Processing
+numpy>=1.26.0
+pandas>=2.0.0
+Pillow>=10.0.0
+
+# HTTP and Environment
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# Database
+supabase>=2.15.0
+
+# Essential ML (lighter versions)
+scikit-learn>=1.3.0
+
+# System monitoring
+psutil>=5.9.0
+
+# Note: Heavy ML packages removed for faster deployment:
+# - sentence-transformers (can be installed on first run)
+# - faiss-cpu (can be installed on first run)  
+# - opencv-python-headless (can be installed on first run)
+# - matplotlib (optional for production) 

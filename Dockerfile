@@ -1,54 +1,43 @@
-# Use official Python runtime as base image
-FROM python:3.11-slim AS base
+# Railway-optimized Dockerfile
+FROM python:3.11-slim
 
-# Set environment variables
+# Environment variables for Railway
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Set work directory
 WORKDIR /app
 
-# Install system dependencies required for OpenCV, dlib, and other packages
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
-    libopencv-dev \
-    python3-opencv \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
-    libgcc-s1 \
+# Install only essential system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
-COPY requirements.txt .
+# Copy minimal requirements for faster build
+COPY requirements-minimal.txt requirements.txt
 
-# Install Python dependencies
+# Install minimal dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+# Copy app files
+COPY app.py config.py database.py ./
+COPY color_analysis_api.py skin_tone_analyzer.py ./
+COPY phase1_supabase_outfits_generator.py ./
+COPY phase2_supabase_similar_outfits_api.py ./
+COPY phase3_supabase_similar_products_api.py ./
+COPY start.sh ./
+COPY "Colour map.xlsx" ./
 
-# Create necessary directories
-RUN mkdir -p data/user_recommendations
+# Create directories and user
+RUN mkdir -p data/user_recommendations && \
+    adduser --disabled-password --gecos '' appuser && \
+    chown -R appuser:appuser /app && \
+    chmod +x start.sh
 
-# Create non-root user for security
-RUN adduser --disabled-password --gecos '' appuser && \
-    chown -R appuser:appuser /app
 USER appuser
 
-# Expose port
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/api/v1/health || exit 1
-
-# Command to run the application
+# Use direct Python for faster startup during development
 CMD ["python", "app.py"] 

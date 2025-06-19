@@ -256,31 +256,27 @@ similar_products_response_model = api.model('SimilarProductsResponse', {
 # Initialize the enhanced color analysis API
 color_api = EnhancedColorAnalysisAPI()
 
-# Import outfit generation functionality
+# Graceful imports for optional ML dependencies
 try:
-    from phase1_supabase_outfits_generator import SupabaseMainOutfitsGenerator
-    from database import SupabaseDB
-    outfit_generator_available = True
+    from phase1_supabase_outfits_generator import OutfitGenerator
+    OUTFITS_AVAILABLE = True
 except ImportError as e:
-    logger.warning(f"Outfit generation modules not available: {e}")
-    outfit_generator_available = False
+    logger.warning(f"Outfit generation not available: {e}")
+    OUTFITS_AVAILABLE = False
 
-# Import Phase 2 similar outfits functionality
 try:
-    from phase2_supabase_similar_outfits_api import SupabaseSimilarOutfitsGenerator
-    similar_outfits_available = True
+    from phase2_supabase_similar_outfits_api import SimilarOutfitsGenerator
+    SIMILAR_OUTFITS_AVAILABLE = True
 except ImportError as e:
-    logger.warning(f"Similar outfits modules not available: {e}")
-    similar_outfits_available = False
+    logger.warning(f"Similar outfits not available: {e}")
+    SIMILAR_OUTFITS_AVAILABLE = False
 
-# Import Phase 3 similar products functionality
 try:
-    from phase3_supabase_similar_products_api import SupabaseEnhancedSimilarProductsGenerator
-    similar_products_available = True
-    logger.info("✅ Phase 3 Similar Products Generator loaded successfully")
+    from phase3_supabase_similar_products_api import SimilarProductsGenerator
+    SIMILAR_PRODUCTS_AVAILABLE = True
 except ImportError as e:
-    logger.warning(f"⚠️ Phase 3 Similar Products Generator not available: {e}")
-    similar_products_available = False
+    logger.warning(f"Similar products not available: {e}")
+    SIMILAR_PRODUCTS_AVAILABLE = False
 
 @outfit_ns.route('/generate')
 class OutfitGeneration(Resource):
@@ -301,7 +297,7 @@ class OutfitGeneration(Resource):
         and can be retrieved via the /outfits/{user_id} endpoint.
         """
         try:
-            if not outfit_generator_available:
+            if not OUTFITS_AVAILABLE:
                 return {
                     'success': False,
                     'message': 'Outfit generation service is not available'
@@ -327,7 +323,7 @@ class OutfitGeneration(Resource):
             import time
             start_time = time.time()
             
-            generator = SupabaseMainOutfitsGenerator()
+            generator = OutfitGenerator()
             
             # Check if outfits already exist (unless regenerate is True)
             if not regenerate:
@@ -402,7 +398,7 @@ class UserOutfits(Resource):
         - /api/v1/outfits/2?style=contemporary&limit=3
         """
         try:
-            if not outfit_generator_available:
+            if not OUTFITS_AVAILABLE:
                 return {
                     'success': False,
                     'message': 'Outfit service is not available'
@@ -534,7 +530,7 @@ class SimilarOutfits(Resource):
         **Note:** The source outfit must exist in the database (generated via Phase 1).
         """
         try:
-            if not similar_outfits_available:
+            if not SIMILAR_OUTFITS_AVAILABLE:
                 return {
                     'success': False,
                     'message': 'Similar outfits service is not available'
@@ -554,7 +550,7 @@ class SimilarOutfits(Resource):
             import time
             start_time = time.time()
             
-            generator = SupabaseSimilarOutfitsGenerator()
+            generator = SimilarOutfitsGenerator()
             
             # Find similar outfits
             similar_outfits = generator.find_similar_outfits(outfit_id, num_similar=count)
@@ -694,7 +690,7 @@ class SimilarProducts(Resource):
         - "Recommend similar products within my budget"
         """
         try:
-            if not similar_products_available:
+            if not SIMILAR_PRODUCTS_AVAILABLE:
                 return {
                     'success': False,
                     'message': 'Similar products service is not available'
@@ -729,7 +725,7 @@ class SimilarProducts(Resource):
                 logger.info("Personalization disabled - no user preferences provided")
             
             # Initialize Phase 3 generator
-            generator = SupabaseEnhancedSimilarProductsGenerator()
+            generator = SimilarProductsGenerator()
             
             # Find similar products
             logger.info(f"🔍 Finding {count} similar products for product {product_id}")
