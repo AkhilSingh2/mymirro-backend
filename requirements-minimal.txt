@@ -11,6 +11,9 @@ numpy>=1.26.0
 pandas>=2.0.0
 Pillow>=10.0.0
 
+# Computer Vision (essential for color analysis)
+opencv-python-headless>=4.8.0
+
 # HTTP and Environment
 requests>=2.31.0
 python-dotenv>=1.0.0
@@ -18,14 +21,13 @@ python-dotenv>=1.0.0
 # Database
 supabase>=2.15.0
 
-# Essential ML (lighter versions)
+# Essential ML (for basic functionality)
 scikit-learn>=1.3.0
 
 # System monitoring
 psutil>=5.9.0
 
-# Note: Heavy ML packages removed for faster deployment:
-# - sentence-transformers (can be installed on first run)
-# - faiss-cpu (can be installed on first run)  
-# - opencv-python-headless (can be installed on first run)
-# - matplotlib (optional for production) 
+# Note: Heavy ML packages can be added later:
+# - sentence-transformers (for outfit generation)
+# - faiss-cpu (for similarity search)
+# - matplotlib (for visualization) 

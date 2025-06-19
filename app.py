@@ -5,8 +5,16 @@ from flask_restx import Api, Resource, fields
 import logging
 from typing import Dict, List, Tuple, Optional
 
-# Import the enhanced color analysis API
-from color_analysis_api import EnhancedColorAnalysisAPI
+# Graceful import for color analysis
+try:
+    from color_analysis_api import EnhancedColorAnalysisAPI
+    color_api = EnhancedColorAnalysisAPI()
+    COLOR_ANALYSIS_AVAILABLE = True
+    logger.info("✅ Color Analysis API loaded successfully")
+except ImportError as e:
+    logger.warning(f"⚠️ Color Analysis API not available: {e}")
+    COLOR_ANALYSIS_AVAILABLE = False
+    color_api = None
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -250,11 +258,6 @@ similar_products_response_model = api.model('SimilarProductsResponse', {
     'personalization_applied': fields.Boolean(description='Whether user preferences were applied', example=True),
     'diversity_filtering_applied': fields.Boolean(description='Whether diversity filtering was applied', example=True)
 })
-
-
-
-# Initialize the enhanced color analysis API
-color_api = EnhancedColorAnalysisAPI()
 
 # Graceful imports for optional ML dependencies
 try:
@@ -831,6 +834,12 @@ class ColorAnalysis(Resource):
         **Note:** Provide either 'image' OR 'hex_color', not both.
         """
         try:
+            if not COLOR_ANALYSIS_AVAILABLE:
+                return {
+                    'success': False,
+                    'error': "Color analysis not available - missing dependencies (OpenCV)"
+                }, 503
+                
             data = request.get_json()
             if not data:
                 api.abort(400, "No JSON data provided")
@@ -888,6 +897,12 @@ class PhotoColorAnalysis(Resource):
         **Recommendation:** Use `/analyze` endpoint which supports both photo and manual modes.
         """
         try:
+            if not COLOR_ANALYSIS_AVAILABLE:
+                return {
+                    'success': False,
+                    'error': "Color analysis not available - missing dependencies (OpenCV)"
+                }, 503
+                
             data = request.get_json()
             if not data or 'image' not in data:
                 api.abort(400, "Missing 'image' field in request")
@@ -930,6 +945,12 @@ class HexColorAnalysis(Resource):
         **Recommendation:** Use `/analyze` endpoint which supports both photo and manual modes.
         """
         try:
+            if not COLOR_ANALYSIS_AVAILABLE:
+                return {
+                    'success': False,
+                    'error': "Color analysis not available - missing dependencies (OpenCV)"
+                }, 503
+                
             data = request.get_json()
             if not data or 'hex_color' not in data:
                 api.abort(400, "Missing 'hex_color' field in request")
