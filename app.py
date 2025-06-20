@@ -298,14 +298,16 @@ except ImportError as e:
 try:
     from phase2_supabase_similar_outfits_api import SupabaseSimilarOutfitsGenerator as SimilarOutfitsGenerator
     SIMILAR_OUTFITS_AVAILABLE = True
-except ImportError as e:
+    logger.info("✅ Phase 2 (Similar Outfits) imported successfully")
+except Exception as e:
     logger.warning(f"Similar outfits not available: {e}")
     SIMILAR_OUTFITS_AVAILABLE = False
 
 try:
     from phase3_supabase_similar_products_api import SupabaseEnhancedSimilarProductsGenerator as SimilarProductsGenerator
     SIMILAR_PRODUCTS_AVAILABLE = True
-except ImportError as e:
+    logger.info("✅ Phase 3 (Similar Products) imported successfully")
+except Exception as e:
     logger.warning(f"Similar products not available: {e}")
     SIMILAR_PRODUCTS_AVAILABLE = False
 
@@ -1321,6 +1323,50 @@ class ModelWarmup(Resource):
             }, 500
         finally:
             _warmup_in_progress = False
+
+@api.route('/debug/imports')
+class ImportDebug(Resource):
+    @api.doc('debug_imports')
+    def get(self):
+        """Debug import issues for Phase 2 and 3"""
+        results = {}
+        
+        # Test Phase 2 import
+        try:
+            from phase2_supabase_similar_outfits_api import SupabaseSimilarOutfitsGenerator
+            results['phase2_import'] = 'SUCCESS'
+            
+            # Try to instantiate
+            try:
+                generator = SupabaseSimilarOutfitsGenerator()
+                results['phase2_instantiate'] = 'SUCCESS'
+            except Exception as e:
+                results['phase2_instantiate'] = f'FAILED: {str(e)}'
+                
+        except Exception as e:
+            results['phase2_import'] = f'FAILED: {str(e)}'
+        
+        # Test Phase 3 import
+        try:
+            from phase3_supabase_similar_products_api import SupabaseEnhancedSimilarProductsGenerator
+            results['phase3_import'] = 'SUCCESS'
+            
+            # Try to instantiate
+            try:
+                generator = SupabaseEnhancedSimilarProductsGenerator()
+                results['phase3_instantiate'] = 'SUCCESS'
+            except Exception as e:
+                results['phase3_instantiate'] = f'FAILED: {str(e)}'
+                
+        except Exception as e:
+            results['phase3_import'] = f'FAILED: {str(e)}'
+        
+        results['current_availability'] = {
+            'similar_outfits': SIMILAR_OUTFITS_AVAILABLE,
+            'similar_products': SIMILAR_PRODUCTS_AVAILABLE
+        }
+        
+        return results
 
 # Add explicit OPTIONS handler for better CORS preflight support
 @app.before_request

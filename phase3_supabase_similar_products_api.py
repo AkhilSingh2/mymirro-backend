@@ -42,14 +42,10 @@ class SupabaseEnhancedSimilarProductsGenerator:
         """Initialize the Supabase-enabled enhanced similar products generator."""
         self.config = config or self._default_config()
         
-        # Railway CPU optimization
+        # Railway CPU optimization - delay until needed
         self.is_railway = os.getenv('RAILWAY_ENVIRONMENT') is not None
         if self.is_railway:
-            logger.info("🏭 Railway environment detected - applying CPU optimizations for similar products")
-            # Set conservative CPU limits for ML operations
-            for var in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'OPENBLAS_NUM_THREADS']:
-                os.environ[var] = '2'
-            logger.info("🔧 Set CPU threads to 2 for Railway compatibility")
+            logger.info("🏭 Railway environment detected - will apply CPU optimizations when needed")
         
         # Check for required dependencies
         if not FAISS_AVAILABLE:
@@ -278,6 +274,11 @@ class SupabaseEnhancedSimilarProductsGenerator:
     
     def find_similar_products(self, product_id: str, num_similar: int = 10, 
                             user_preferences: Dict = None, filters: Dict = None) -> List[Dict]:
+        # Apply Railway CPU optimization before heavy computation
+        if self.is_railway:
+            for var in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'OPENBLAS_NUM_THREADS']:
+                os.environ[var] = '2'
+            logger.info("🔧 Applied CPU limits for similar products computation")
         """Enhanced same-category similar products with diversity using Supabase."""
         
         try:
