@@ -970,6 +970,67 @@ class HexColorAnalysis(Resource):
             logger.error(f"Error in analyze_color_hex endpoint: {e}")
             api.abort(500, "Internal server error")
 
+@api.route('/debug/data')
+class DebugData(Resource):
+    @api.doc('debug_data_check')
+    def get(self):
+        """Debug endpoint to check available data in database"""
+        try:
+            db = SupabaseDB()
+            
+            # Check outfit data
+            outfits_info = {}
+            try:
+                outfits_result = db.client.table('user_outfits').select('main_outfit_id').limit(5).execute()
+                if outfits_result.data:
+                    outfits_info['sample_outfit_ids'] = [outfit['main_outfit_id'] for outfit in outfits_result.data]
+                    outfits_info['outfit_count'] = len(outfits_result.data)
+                else:
+                    outfits_info['error'] = 'No outfits found in user_outfits table'
+            except Exception as e:
+                outfits_info['error'] = f'Error accessing user_outfits: {e}'
+            
+            # Check product data
+            products_info = {}
+            try:
+                products_result = db.client.table('tagged_products').select('product_id').limit(5).execute()
+                if products_result.data:
+                    products_info['sample_product_ids'] = [str(p.get('product_id', p.get('id', 'unknown'))) for p in products_result.data]
+                    products_info['product_count'] = len(products_result.data)
+                else:
+                    products_info['error'] = 'No products found in tagged_products table'
+            except Exception as e:
+                products_info['error'] = f'Error accessing tagged_products: {e}'
+            
+            # Check table structures
+            table_info = {}
+            try:
+                # Get one record from each table to see structure
+                outfit_sample = db.client.table('user_outfits').select('*').limit(1).execute()
+                if outfit_sample.data:
+                    table_info['user_outfits_columns'] = list(outfit_sample.data[0].keys())
+                
+                product_sample = db.client.table('tagged_products').select('*').limit(1).execute()
+                if product_sample.data:
+                    table_info['tagged_products_columns'] = list(product_sample.data[0].keys())
+                    
+            except Exception as e:
+                table_info['error'] = f'Error getting table structure: {e}'
+            
+            return {
+                'success': True,
+                'outfits': outfits_info,
+                'products': products_info,
+                'table_structures': table_info,
+                'suggestion': 'Use the sample IDs above to test the APIs'
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f'Debug check failed: {e}'
+            }, 500
+
 # Add a root endpoint to redirect to Swagger UI
 @app.route('/')
 def index():
