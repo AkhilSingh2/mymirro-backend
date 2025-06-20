@@ -1971,8 +1971,7 @@ class SupabaseMainOutfitsGenerator:
         for top_type, incompatible_bottoms in incompatible_combinations.items():
             if top_type in top_category and any(
                     bottom in bottom_category for bottom in incompatible_bottoms):
-                return False, f"Incompatible combination: {
-                    top_type} with {bottom_category}"
+                return False, f"Incompatible combination: {top_type} with {bottom_category}"
 
         # Check color harmony
         def check_color_harmony(color1, color2):
