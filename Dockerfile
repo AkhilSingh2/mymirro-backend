@@ -1,26 +1,35 @@
-# Railway-optimized Dockerfile with FAISS support
-FROM python:3.11-slim
+# Multi-stage Railway-optimized Dockerfile for size optimization
+FROM python:3.11-slim as builder
 
-# Environment variables for Railway
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
-
-WORKDIR /app
-
-# Install system dependencies for ML libraries
+# Build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy full requirements for complete functionality
-COPY requirements.txt .
+WORKDIR /app
 
-# Install dependencies with optimizations for Railway build
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Copy and install requirements in builder stage
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Production stage - much smaller
+FROM python:3.11-slim
+
+# Environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH=/home/appuser/.local/bin:$PATH
+
+WORKDIR /app
+
+# Only essential runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && adduser --disabled-password --gecos '' appuser
+
+# Copy installed packages from builder
+COPY --from=builder /root/.local /home/appuser/.local
 
 # Copy app files
 COPY app.py config.py database.py ./
@@ -31,9 +40,8 @@ COPY phase3_supabase_similar_products_api.py ./
 COPY start.sh ./
 COPY ["Colour map.xlsx", "./"]
 
-# Create directories and user
+# Create directories and set permissions
 RUN mkdir -p data/user_recommendations && \
-    adduser --disabled-password --gecos '' appuser && \
     chown -R appuser:appuser /app && \
     chmod +x start.sh
 
@@ -41,9 +49,8 @@ USER appuser
 
 EXPOSE 8000
 
-# Health check for Railway
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/api/v1/health || exit 1
 
-# Use direct Python for faster startup during development
 CMD ["python", "app.py"] 
