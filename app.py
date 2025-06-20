@@ -999,10 +999,28 @@ class DebugData(Resource):
             # Check product data
             products_info = {}
             try:
-                products_result = db.client.table('tagged_products').select('product_id').limit(5).execute()
+                # First try to get any record to see if table exists and has data
+                products_result = db.client.table('tagged_products').select('*').limit(1).execute()
                 if products_result.data:
-                    products_info['sample_product_ids'] = [str(p.get('product_id', p.get('id', 'unknown'))) for p in products_result.data]
-                    products_info['product_count'] = len(products_result.data)
+                    # Try to get product_id column specifically
+                    try:
+                        products_id_result = db.client.table('tagged_products').select('product_id').limit(5).execute()
+                        if products_id_result.data:
+                            products_info['sample_product_ids'] = [str(p.get('product_id', p.get('id', 'unknown'))) for p in products_id_result.data]
+                            products_info['product_count'] = len(products_id_result.data)
+                        else:
+                            products_info['error'] = 'No products found when selecting product_id'
+                    except Exception as e:
+                        products_info['error'] = f'Error selecting product_id column: {e}'
+                        # Fallback: try to get id column
+                        try:
+                            products_id_result = db.client.table('tagged_products').select('id').limit(5).execute()
+                            if products_id_result.data:
+                                products_info['sample_product_ids'] = [str(p.get('id', 'unknown')) for p in products_id_result.data]
+                                products_info['product_count'] = len(products_id_result.data)
+                                products_info['note'] = 'Using id column instead of product_id'
+                        except Exception as e2:
+                            products_info['error'] = f'Error with both product_id and id columns: {e}, {e2}'
                 else:
                     products_info['error'] = 'No products found in tagged_products table'
             except Exception as e:
