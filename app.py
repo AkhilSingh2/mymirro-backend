@@ -836,7 +836,7 @@ class ColorAnalysis(Resource):
         
         **Request Examples:**
         ```
-        Photo mode: {"image": "data:image/jpeg;base64,/9j/4AAQ..."}
+        Photo mode: {"image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQ...}
         Manual mode: {"hex_color": "#FDB4A6"}
         ```
         
@@ -999,10 +999,28 @@ class DebugData(Resource):
             # Check product data
             products_info = {}
             try:
-                products_result = db.client.table('tagged_products').select('product_id').limit(5).execute()
+                # First try to get any record to see if table exists and has data
+                products_result = db.client.table('tagged_products').select('*').limit(1).execute()
                 if products_result.data:
-                    products_info['sample_product_ids'] = [str(p.get('product_id', p.get('id', 'unknown'))) for p in products_result.data]
-                    products_info['product_count'] = len(products_result.data)
+                    # Try to get product_id column specifically
+                    try:
+                        products_id_result = db.client.table('tagged_products').select('product_id').limit(5).execute()
+                        if products_id_result.data:
+                            products_info['sample_product_ids'] = [str(p.get('product_id', p.get('id', 'unknown'))) for p in products_id_result.data]
+                            products_info['product_count'] = len(products_id_result.data)
+                        else:
+                            products_info['error'] = 'No products found when selecting product_id'
+                    except Exception as e:
+                        products_info['error'] = f'Error selecting product_id column: {e}'
+                        # Fallback: try to get id column
+                        try:
+                            products_id_result = db.client.table('tagged_products').select('id').limit(5).execute()
+                            if products_id_result.data:
+                                products_info['sample_product_ids'] = [str(p.get('id', 'unknown')) for p in products_id_result.data]
+                                products_info['product_count'] = len(products_id_result.data)
+                                products_info['note'] = 'Using id column instead of product_id'
+                        except Exception as e2:
+                            products_info['error'] = f'Error with both product_id and id columns: {e}, {e2}'
                 else:
                     products_info['error'] = 'No products found in tagged_products table'
             except Exception as e:
@@ -1036,6 +1054,65 @@ class DebugData(Resource):
                 'success': False,
                 'error': f'Debug check failed: {e}'
             }, 500
+
+@api.route('/test/supabase-direct')
+class TestSupabaseDirect(Resource):
+    @api.doc('test_supabase_direct')
+    def get(self):
+        """Direct Supabase test to bypass database wrapper"""
+        try:
+            from supabase import create_client
+            import os
+            
+            # Get credentials directly from environment
+            supabase_url = os.getenv('SUPABASE_URL')
+            supabase_anon_key = os.getenv('SUPABASE_ANON_KEY')
+            supabase_service_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+            
+            results = {}
+            
+            # Test with anon key
+            if supabase_url and supabase_anon_key:
+                try:
+                    client_anon = create_client(supabase_url, supabase_anon_key)
+                    result_anon = client_anon.table('tagged_products').select('*').limit(3).execute()
+                    results['anon_key'] = {
+                        'success': True,
+                        'data_count': len(result_anon.data) if result_anon.data else 0,
+                        'sample_data': result_anon.data[:1] if result_anon.data else None
+                    }
+                except Exception as e:
+                    results['anon_key'] = {'success': False, 'error': str(e)}
+            
+            # Test with service role key
+            if supabase_url and supabase_service_key:
+                try:
+                    client_service = create_client(supabase_url, supabase_service_key)
+                    result_service = client_service.table('tagged_products').select('*').limit(3).execute()
+                    results['service_key'] = {
+                        'success': True,
+                        'data_count': len(result_service.data) if result_service.data else 0,
+                        'sample_data': result_service.data[:1] if result_service.data else None
+                    }
+                except Exception as e:
+                    results['service_key'] = {'success': False, 'error': str(e)}
+            
+            return {
+                'success': True,
+                'supabase_url': supabase_url,
+                'keys_available': {
+                    'anon_key': bool(supabase_anon_key),
+                    'service_key': bool(supabase_service_key)
+                },
+                'results': results
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'error_type': str(type(e))
+            }
 
 # Add a root endpoint to redirect to Swagger UI
 @app.route('/')

@@ -31,9 +31,10 @@ class SupabaseDB:
             
             supabase_config = self.config.get_supabase_config()
             
-            # Use service role key for development, anon key for production
+            # Use service role key for both development and production 
+            # since tagged_products table requires elevated permissions
             key = (supabase_config['service_role_key'] 
-                   if self.config.FLASK_ENV == 'development' and supabase_config['service_role_key']
+                   if supabase_config['service_role_key']
                    else supabase_config['anon_key'])
             
             self.client = create_client(
