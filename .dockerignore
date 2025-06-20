@@ -1,39 +1,32 @@
-# Python
+# Development files
+*.pyc
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
+.pytest_cache/
+*.pyo
+*.pyd
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
+env
 venv/
-env/
-.venv/
-.env
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
 
-# IDE and editor files
+# IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS generated files
+# OS files
 .DS_Store
 .DS_Store?
 ._*
@@ -43,41 +36,47 @@ ehthumbs.db
 Thumbs.db
 
 # Git
-.git/
+.git
 .gitignore
-
-# Documentation
 README.md
-docs/
+DEPLOY.md
+CHECKLIST.md
 
-# Tests
-test_*.py
-*_test.py
-tests/
-
-# Large data files (will be downloaded or provided via environment)
+# Large data files
 *.csv
 *.xlsx
-local_processed_results_enhanced.csv
-User_Data.xlsx
-
-# Keep only essential data files
 !Colour\ map.xlsx
-!requirements.txt
+*.json
+data/
+notebooks/
+test_data/
 
-# Logs
-*.log
-app.log
+# Documentation
+docs/
+*.md
+!README.md
+
+# CI/CD
+.github/
+.circleci/
+
+# Railway specific
+railway.toml
 
 # Jupyter notebooks
 *.ipynb
 .ipynb_checkpoints
 
-# Demo and development files
-demo_*.py
-setup_*.py
+# Testing
+tests/
+test_*.py
+*_test.py
 
-# Railway and deployment files
-.railway/
-Dockerfile
-.dockerignore 
+# Requirements variants
+requirements-minimal.txt
+requirements-dev.txt
+
+# Temporary files
+*.tmp
+*.temp
+temp/ 
