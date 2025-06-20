@@ -1,4 +1,4 @@
-# Web Framework
+# Core Web Framework (lightweight versions)
 Flask==2.3.3
 Flask-CORS==4.0.0
 flask-restx==1.3.0
@@ -7,21 +7,25 @@ Werkzeug==2.3.7
 # Production WSGI Server
 gunicorn>=20.1.0
 
-# Computer Vision & Image Processing
+# Computer Vision & Image Processing (optimized)
 opencv-python-headless>=4.8.0
 Pillow>=10.0.0
 
-# Data Science & Machine Learning
+# Data Science & Machine Learning (Railway-optimized)
 numpy>=1.26.0
 pandas>=2.0.0
 scikit-learn>=1.3.0
+
+# FAISS (CPU-only, lightweight)
 faiss-cpu>=1.7.4
+
+# Sentence Transformers (lightweight version)
 sentence-transformers>=2.2.0
 
-# Face Recognition (if needed - can be heavy)
-# dlib==19.24.2
+# Excel file support (for color map)
+openpyxl>=3.1.0
 
-# Data Visualization
+# Data Visualization (lightweight)
 matplotlib>=3.7.0
 
 # HTTP Requests
@@ -33,5 +37,9 @@ python-dotenv>=1.0.0
 # Database
 supabase>=2.15.0
 
-# Additional dependencies for production
-psutil>=5.9.0 
+# Production monitoring
+psutil>=5.9.0
+
+# Torch (CPU-only for Railway efficiency)
+torch>=2.0.0
+transformers>=4.21.0 
