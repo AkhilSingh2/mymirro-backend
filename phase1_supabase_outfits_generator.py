@@ -48,6 +48,15 @@ class SupabaseMainOutfitsGenerator:
         self.config = config or self._default_config()
         self.db = get_db()
         
+        # Railway CPU optimization
+        self.is_railway = os.getenv('RAILWAY_ENVIRONMENT') is not None
+        if self.is_railway:
+            logger.info("🏭 Railway environment detected - applying CPU optimizations for outfit generation")
+            # Set conservative CPU limits for ML operations
+            for var in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'OPENBLAS_NUM_THREADS']:
+                os.environ[var] = '2'
+            logger.info("🔧 Set CPU threads to 2 for Railway compatibility")
+        
         # Check for required dependencies
         if not FAISS_AVAILABLE:
             logger.error("❌ FAISS not available. Outfit generation requires FAISS for similarity search.")
@@ -62,8 +71,11 @@ class SupabaseMainOutfitsGenerator:
             logger.error("❌ Database connection failed. Please check your Supabase configuration.")
             raise ConnectionError("Failed to connect to Supabase database")
         
-        # Load model
+        # Load model with CPU optimization
         try:
+            if self.is_railway:
+                # Use CPU-optimized settings for Railway
+                logger.info("🔧 Loading model with Railway CPU optimizations")
             self.model = SentenceTransformer(self.config['model_name'])
             logger.info(f"✅ Model loaded: {self.config['model_name']}")
         except Exception as e:
@@ -648,6 +660,12 @@ class SupabaseMainOutfitsGenerator:
     def build_faiss_indexes(self, products_df: pd.DataFrame) -> None:
         """Build FAISS indexes for different wear types using enhanced Supabase data."""
         logger.info("🔄 Building FAISS indexes for product recommendations...")
+        
+        # Railway CPU optimization for FAISS indexing
+        if self.is_railway:
+            logger.info("🏭 Applying Railway CPU limits for FAISS indexing operations")
+            for var in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'OPENBLAS_NUM_THREADS']:
+                os.environ[var] = '1'  # Extra conservative for FAISS operations
         
         wear_types = ['Upperwear', 'Bottomwear']
         
