@@ -4,6 +4,8 @@ from flask_cors import CORS
 from flask_restx import Api, Resource, fields
 import logging
 from typing import Dict, List, Tuple, Optional
+import threading
+import multiprocessing
 
 # Import database module
 from database import SupabaseDB
@@ -11,6 +13,20 @@ from database import SupabaseDB
 # Setup logging first
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Add Railway CPU optimization settings
+RAILWAY_CPU_LIMIT = os.getenv('RAILWAY_CPU_LIMIT', '4')  # Limit to 4 CPUs on Railway
+IS_RAILWAY = os.getenv('RAILWAY_ENVIRONMENT') is not None
+
+# Configure CPU limits for Railway
+if IS_RAILWAY:
+    # Limit CPU cores for FAISS and other ML operations
+    os.environ['OMP_NUM_THREADS'] = RAILWAY_CPU_LIMIT
+    os.environ['MKL_NUM_THREADS'] = RAILWAY_CPU_LIMIT  
+    os.environ['NUMEXPR_NUM_THREADS'] = RAILWAY_CPU_LIMIT
+    os.environ['OPENBLAS_NUM_THREADS'] = RAILWAY_CPU_LIMIT
+    # Limit multiprocessing
+    multiprocessing.set_start_method('spawn', force=True)
 
 # Graceful import for color analysis
 try:
@@ -339,11 +355,30 @@ class OutfitGeneration(Resource):
                     'message': 'user_id is required'
                 }, 400
             
-            # Initialize generator
+            # Initialize generator with Railway CPU optimization
             import time
             start_time = time.time()
             
+            # Railway CPU optimization - limit resource usage
+            if IS_RAILWAY:
+                logger.info(f"🏭 Railway environment detected - applying CPU optimizations")
+                # Set conservative CPU limits for this operation
+                original_threads = {}
+                thread_vars = ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'OPENBLAS_NUM_THREADS']
+                for var in thread_vars:
+                    original_threads[var] = os.environ.get(var)
+                    os.environ[var] = '2'  # Conservative limit for Railway
+                logger.info(f"🔧 Set CPU threads to 2 for Railway compatibility")
+            
             generator = OutfitGenerator()
+            
+            # Restore thread settings after initialization if Railway
+            if IS_RAILWAY:
+                for var, value in original_threads.items():
+                    if value is not None:
+                        os.environ[var] = value
+                    elif var in os.environ:
+                        del os.environ[var]
             
             # Check if outfits already exist (unless regenerate is True)
             if not regenerate:
@@ -359,7 +394,13 @@ class OutfitGeneration(Resource):
                         'data_source': 'existing_database'
                     }, 200
             
-            # Generate outfits
+            # Generate outfits with Railway CPU management
+            if IS_RAILWAY:
+                # Apply CPU limits during generation
+                for var in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'OPENBLAS_NUM_THREADS']:
+                    os.environ[var] = '2'
+                logger.info(f"🔧 Applied CPU limits for outfit generation on Railway")
+            
             success = generator.generate_and_save_outfits(user_id)
             
             generation_time = time.time() - start_time
