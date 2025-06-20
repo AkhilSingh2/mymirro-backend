@@ -582,20 +582,32 @@ class SimilarOutfits(Resource):
             start_time = time.time()
             
             try:
-                # Set a 30-second timeout for Railway compatibility
-                with timeout_handler(30):
-                    generator = SimilarOutfitsGenerator()
-                    
-                    # Find similar outfits with reduced processing for production
-                    similar_outfits = generator.find_similar_outfits(outfit_id, num_similar=min(count, 5))
+                # Initialize generator first (this is usually fast)
+                generator = SimilarOutfitsGenerator()
+                logger.info(f"🔍 Finding {count} similar outfits for outfit {outfit_id}")
+                
+                # Try a quick warmup first to check if models are ready
+                try:
+                    # Quick test to see if generator is ready (should be fast)
+                    test_start = time.time()
+                    generator._ensure_models_loaded()  # Pre-warm models if they have this method
+                    warmup_time = time.time() - test_start
+                    logger.info(f"⚡ Model warmup completed in {warmup_time:.2f}s")
+                except (AttributeError, Exception) as e:
+                    logger.info(f"⚠️ Model warmup not available or failed: {e}")
+                
+                # Set a longer timeout to allow full functionality
+                with timeout_handler(60):
+                    similar_outfits = generator.find_similar_outfits(outfit_id, num_similar=count)
                     
             except TimeoutError:
                 logger.warning(f"Similar outfits search timed out for outfit {outfit_id}")
                 return {
                     'success': False,
-                    'message': 'Search timed out. This may happen on first request while indexes are building. Please try again in a few moments.',
+                    'message': 'Search timed out after 60 seconds. This may happen on first request while ML models are initializing. Please try again in a few moments.',
                     'timeout': True,
-                    'suggestion': 'Try reducing the count parameter or retry the request'
+                    'suggestion': 'The API is working but needs time to build indexes. Please retry in 30-60 seconds.',
+                    'error_code': 'TIMEOUT_60S'
                 }, 504
             
             search_time = time.time() - start_time
@@ -784,18 +796,16 @@ class SimilarProducts(Resource):
                 logger.info("Personalization disabled - no user preferences provided")
             
             try:
-                # Set a 30-second timeout for Railway compatibility
-                with timeout_handler(30):
-                    # Initialize Phase 3 generator
-                    generator = SimilarProductsGenerator()
-                    
-                    # Find similar products with reduced processing for production
-                    logger.info(f"🔍 Finding {min(count, 5)} similar products for product {product_id}")
-                    logger.info(f"   Diverse: {diverse}, Personalized: {personalized}")
-                    
+                # Initialize Phase 3 generator first (this is usually fast)
+                generator = SimilarProductsGenerator()
+                logger.info(f"🔍 Finding {count} similar products for product {product_id}")
+                logger.info(f"   Diverse: {diverse}, Personalized: {personalized}")
+                
+                # Set a longer timeout to allow full functionality
+                with timeout_handler(60):
                     similar_products = generator.find_similar_products(
                         product_id=product_id,
-                        num_similar=min(count, 5),  # Limit to 5 for Railway performance
+                        num_similar=count,
                         user_preferences=user_preferences if personalized else None,
                         filters=filters
                     )
@@ -804,9 +814,10 @@ class SimilarProducts(Resource):
                 logger.warning(f"Similar products search timed out for product {product_id}")
                 return {
                     'success': False,
-                    'message': 'Search timed out. This may happen on first request while indexes are building. Please try again in a few moments.',
+                    'message': 'Search timed out after 60 seconds. This may happen on first request while ML models are initializing. Please try again in a few moments.',
                     'timeout': True,
-                    'suggestion': 'Try reducing the count parameter or retry the request'
+                    'suggestion': 'The API is working but needs time to build indexes. Please retry in 30-60 seconds.',
+                    'error_code': 'TIMEOUT_60S'
                 }, 504
             
             search_time = time.time() - start_time
