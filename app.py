@@ -1242,8 +1242,8 @@ class ModelWarmup(Resource):
             # Try to warm up similar outfits
             if SIMILAR_OUTFITS_AVAILABLE and not _similar_outfits_ready:
                 try:
-                    from phase2_supabase_similar_outfits_api import SimilarOutfitsGenerator
-                    generator = SimilarOutfitsGenerator()
+                    from phase2_supabase_similar_outfits_api import SupabaseSimilarOutfitsGenerator
+                    generator = SupabaseSimilarOutfitsGenerator()
                     # Try a quick initialization
                     logger.info("🔥 Warming up similar outfits models...")
                     _similar_outfits_ready = True
@@ -1254,8 +1254,8 @@ class ModelWarmup(Resource):
             # Try to warm up similar products
             if SIMILAR_PRODUCTS_AVAILABLE and not _similar_products_ready:
                 try:
-                    from phase3_supabase_similar_products_api import SimilarProductsGenerator
-                    generator = SimilarProductsGenerator()
+                    from phase3_supabase_similar_products_api import SupabaseEnhancedSimilarProductsGenerator
+                    generator = SupabaseEnhancedSimilarProductsGenerator()
                     # Try a quick initialization
                     logger.info("🔥 Warming up similar products models...")
                     _similar_products_ready = True
