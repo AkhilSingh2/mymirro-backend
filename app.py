@@ -298,14 +298,16 @@ except ImportError as e:
 try:
     from phase2_supabase_similar_outfits_api import SupabaseSimilarOutfitsGenerator as SimilarOutfitsGenerator
     SIMILAR_OUTFITS_AVAILABLE = True
-except ImportError as e:
+    logger.info("✅ Phase 2 (Similar Outfits) imported successfully")
+except Exception as e:
     logger.warning(f"Similar outfits not available: {e}")
     SIMILAR_OUTFITS_AVAILABLE = False
 
 try:
     from phase3_supabase_similar_products_api import SupabaseEnhancedSimilarProductsGenerator as SimilarProductsGenerator
     SIMILAR_PRODUCTS_AVAILABLE = True
-except ImportError as e:
+    logger.info("✅ Phase 3 (Similar Products) imported successfully")
+except Exception as e:
     logger.warning(f"Similar products not available: {e}")
     SIMILAR_PRODUCTS_AVAILABLE = False
 
