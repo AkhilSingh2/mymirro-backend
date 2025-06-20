@@ -293,6 +293,11 @@ except ImportError as e:
     logger.warning(f"Similar products not available: {e}")
     SIMILAR_PRODUCTS_AVAILABLE = False
 
+# Global variables to track model initialization status
+_similar_outfits_ready = False
+_similar_products_ready = False
+_warmup_in_progress = False
+
 @outfit_ns.route('/generate')
 class OutfitGeneration(Resource):
     """Generate personalized outfits for a user"""
@@ -551,6 +556,17 @@ class SimilarOutfits(Resource):
                     'message': 'Similar outfits service is not available - FAISS and sentence-transformers are required but not installed. This feature is disabled to reduce deployment size.'
                 }, 503
             
+            # Quick readiness check
+            global _similar_outfits_ready
+            if not _similar_outfits_ready:
+                return {
+                    'success': False,
+                    'message': 'Similar outfits models are not ready yet. Please call /api/v1/warmup first to initialize models.',
+                    'ready': False,
+                    'suggestion': 'POST to /api/v1/warmup to initialize models, then retry this request',
+                    'warmup_endpoint': '/api/v1/warmup'
+                }, 503
+            
             # Get query parameters
             count = request.args.get('count', 10, type=int)
             
@@ -751,6 +767,17 @@ class SimilarProducts(Resource):
                 return {
                     'success': False,
                     'message': 'Similar products service is not available - FAISS and sentence-transformers are required but not installed. This feature is disabled to reduce deployment size.'
+                }, 503
+            
+            # Quick readiness check
+            global _similar_products_ready
+            if not _similar_products_ready:
+                return {
+                    'success': False,
+                    'message': 'Similar products models are not ready yet. Please call /api/v1/warmup first to initialize models.',
+                    'ready': False,
+                    'suggestion': 'POST to /api/v1/warmup to initialize models, then retry this request',
+                    'warmup_endpoint': '/api/v1/warmup'
                 }, 503
             
             import time
@@ -1193,6 +1220,66 @@ class TestSupabaseDirect(Resource):
                 'error': str(e),
                 'error_type': str(type(e))
             }
+
+@api.route('/warmup')
+class ModelWarmup(Resource):
+    @api.doc('warmup_models')
+    def post(self):
+        """Warm up ML models for Phase 2 and Phase 3 APIs"""
+        global _similar_outfits_ready, _similar_products_ready, _warmup_in_progress
+        
+        if _warmup_in_progress:
+            return {
+                'success': False,
+                'message': 'Warmup already in progress',
+                'status': 'in_progress'
+            }, 409
+        
+        try:
+            _warmup_in_progress = True
+            logger.info("🔥 Starting model warmup...")
+            
+            # Try to warm up similar outfits
+            if SIMILAR_OUTFITS_AVAILABLE and not _similar_outfits_ready:
+                try:
+                    from phase2_supabase_similar_outfits_api import SimilarOutfitsGenerator
+                    generator = SimilarOutfitsGenerator()
+                    # Try a quick initialization
+                    logger.info("🔥 Warming up similar outfits models...")
+                    _similar_outfits_ready = True
+                    logger.info("✅ Similar outfits models ready")
+                except Exception as e:
+                    logger.warning(f"⚠️ Similar outfits warmup failed: {e}")
+            
+            # Try to warm up similar products
+            if SIMILAR_PRODUCTS_AVAILABLE and not _similar_products_ready:
+                try:
+                    from phase3_supabase_similar_products_api import SimilarProductsGenerator
+                    generator = SimilarProductsGenerator()
+                    # Try a quick initialization
+                    logger.info("🔥 Warming up similar products models...")
+                    _similar_products_ready = True
+                    logger.info("✅ Similar products models ready")
+                except Exception as e:
+                    logger.warning(f"⚠️ Similar products warmup failed: {e}")
+            
+            return {
+                'success': True,
+                'message': 'Model warmup completed',
+                'models_ready': {
+                    'similar_outfits': _similar_outfits_ready,
+                    'similar_products': _similar_products_ready
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Warmup failed: {e}")
+            return {
+                'success': False,
+                'message': f'Warmup failed: {str(e)}'
+            }, 500
+        finally:
+            _warmup_in_progress = False
 
 # Add explicit OPTIONS handler for better CORS preflight support
 @app.before_request
