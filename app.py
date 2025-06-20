@@ -24,7 +24,16 @@ except ImportError as e:
     color_api = None
 
 app = Flask(__name__)
-CORS(app)
+# Enhanced CORS configuration for better browser compatibility
+CORS(app, resources={
+    r"/api/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
+        "supports_credentials": False,
+        "max_age": 600  # Cache preflight response for 10 minutes
+    }
+})
 
 # Configure Swagger UI
 api = Api(
@@ -552,14 +561,42 @@ class SimilarOutfits(Resource):
                     'message': 'Count must be between 1 and 50'
                 }, 400
             
-            # Initialize similar outfits generator
+            # Initialize similar outfits generator with timeout protection
             import time
+            import signal
+            from contextlib import contextmanager
+            
+            @contextmanager
+            def timeout_handler(seconds):
+                def timeout_signal(signum, frame):
+                    raise TimeoutError(f"Operation timed out after {seconds} seconds")
+                
+                old_handler = signal.signal(signal.SIGALRM, timeout_signal)
+                signal.alarm(seconds)
+                try:
+                    yield
+                finally:
+                    signal.alarm(0)
+                    signal.signal(signal.SIGALRM, old_handler)
+            
             start_time = time.time()
             
-            generator = SimilarOutfitsGenerator()
-            
-            # Find similar outfits
-            similar_outfits = generator.find_similar_outfits(outfit_id, num_similar=count)
+            try:
+                # Set a 30-second timeout for Railway compatibility
+                with timeout_handler(30):
+                    generator = SimilarOutfitsGenerator()
+                    
+                    # Find similar outfits with reduced processing for production
+                    similar_outfits = generator.find_similar_outfits(outfit_id, num_similar=min(count, 5))
+                    
+            except TimeoutError:
+                logger.warning(f"Similar outfits search timed out for outfit {outfit_id}")
+                return {
+                    'success': False,
+                    'message': 'Search timed out. This may happen on first request while indexes are building. Please try again in a few moments.',
+                    'timeout': True,
+                    'suggestion': 'Try reducing the count parameter or retry the request'
+                }, 504
             
             search_time = time.time() - start_time
             
@@ -703,6 +740,22 @@ class SimilarProducts(Resource):
                 }, 503
             
             import time
+            import signal
+            from contextlib import contextmanager
+            
+            @contextmanager
+            def timeout_handler(seconds):
+                def timeout_signal(signum, frame):
+                    raise TimeoutError(f"Operation timed out after {seconds} seconds")
+                
+                old_handler = signal.signal(signal.SIGALRM, timeout_signal)
+                signal.alarm(seconds)
+                try:
+                    yield
+                finally:
+                    signal.alarm(0)
+                    signal.signal(signal.SIGALRM, old_handler)
+            
             start_time = time.time()
             
             # Get query parameters
@@ -730,19 +783,31 @@ class SimilarProducts(Resource):
                 personalized = False
                 logger.info("Personalization disabled - no user preferences provided")
             
-            # Initialize Phase 3 generator
-            generator = SimilarProductsGenerator()
-            
-            # Find similar products
-            logger.info(f"🔍 Finding {count} similar products for product {product_id}")
-            logger.info(f"   Diverse: {diverse}, Personalized: {personalized}")
-            
-            similar_products = generator.find_similar_products(
-                product_id=product_id,
-                num_similar=count,
-                user_preferences=user_preferences if personalized else None,
-                filters=filters
-            )
+            try:
+                # Set a 30-second timeout for Railway compatibility
+                with timeout_handler(30):
+                    # Initialize Phase 3 generator
+                    generator = SimilarProductsGenerator()
+                    
+                    # Find similar products with reduced processing for production
+                    logger.info(f"🔍 Finding {min(count, 5)} similar products for product {product_id}")
+                    logger.info(f"   Diverse: {diverse}, Personalized: {personalized}")
+                    
+                    similar_products = generator.find_similar_products(
+                        product_id=product_id,
+                        num_similar=min(count, 5),  # Limit to 5 for Railway performance
+                        user_preferences=user_preferences if personalized else None,
+                        filters=filters
+                    )
+                    
+            except TimeoutError:
+                logger.warning(f"Similar products search timed out for product {product_id}")
+                return {
+                    'success': False,
+                    'message': 'Search timed out. This may happen on first request while indexes are building. Please try again in a few moments.',
+                    'timeout': True,
+                    'suggestion': 'Try reducing the count parameter or retry the request'
+                }, 504
             
             search_time = time.time() - start_time
             
@@ -1113,6 +1178,18 @@ class TestSupabaseDirect(Resource):
                 'error': str(e),
                 'error_type': str(type(e))
             }
+
+# Add explicit OPTIONS handler for better CORS preflight support
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        from flask import Response
+        response = Response()
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET,POST,PUT,DELETE,OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,X-Requested-With'
+        response.headers['Access-Control-Max-Age'] = '600'
+        return response
 
 # Add a root endpoint to redirect to Swagger UI
 @app.route('/')
