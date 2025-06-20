@@ -118,8 +118,7 @@ class SupabaseMainOutfitsGenerator:
                         except Exception as e:
                             continue
             logger.info(
-                f"✅ Loaded {
-                    len(color_harmony_map)} color harmony rules from designer CSV")
+                f"✅ Loaded {len(color_harmony_map)} color harmony rules from designer CSV")
         except Exception as e:
             logger.warning(f"Could not load color harmony CSV: {e}")
         return color_harmony_map
