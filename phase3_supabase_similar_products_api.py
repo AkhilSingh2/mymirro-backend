@@ -42,6 +42,15 @@ class SupabaseEnhancedSimilarProductsGenerator:
         """Initialize the Supabase-enabled enhanced similar products generator."""
         self.config = config or self._default_config()
         
+        # Railway CPU optimization
+        self.is_railway = os.getenv('RAILWAY_ENVIRONMENT') is not None
+        if self.is_railway:
+            logger.info("🏭 Railway environment detected - applying CPU optimizations for similar products")
+            # Set conservative CPU limits for ML operations
+            for var in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'OPENBLAS_NUM_THREADS']:
+                os.environ[var] = '2'
+            logger.info("🔧 Set CPU threads to 2 for Railway compatibility")
+        
         # Check for required dependencies
         if not FAISS_AVAILABLE:
             logger.error("❌ FAISS not available. Similar products service requires FAISS for similarity search.")
@@ -57,8 +66,10 @@ class SupabaseEnhancedSimilarProductsGenerator:
             logger.error("❌ Database connection failed. Please check your Supabase configuration.")
             raise ConnectionError("Failed to connect to Supabase database")
         
-        # Load model
+        # Load model with CPU optimization
         try:
+            if self.is_railway:
+                logger.info("🔧 Loading model with Railway CPU optimizations")
             self.model = SentenceTransformer(self.config['model_name'])
             logger.info(f"✅ Model loaded: {self.config['model_name']}")
         except Exception as e:
@@ -752,6 +763,12 @@ class SupabaseEnhancedSimilarProductsGenerator:
     def build_faiss_indexes(self, products_df: pd.DataFrame) -> None:
         """Build FAISS indexes for different wear types."""
         logger.info("Building FAISS indexes for enhanced same-category search...")
+        
+        # Railway CPU optimization for FAISS indexing
+        if self.is_railway:
+            logger.info("🏭 Applying Railway CPU limits for FAISS indexing operations")
+            for var in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'OPENBLAS_NUM_THREADS']:
+                os.environ[var] = '1'  # Extra conservative for FAISS operations
         
         wear_types = products_df['wear_type'].unique()
         
