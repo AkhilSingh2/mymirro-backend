@@ -590,10 +590,8 @@ class SupabaseMainOutfitsGenerator:
         products_df['data_quality_score'] = products_df.apply(
             calculate_quality_score, axis=1)
 
-        logger.info(f"Product validation complete. Average quality score: {
-                    products_df['data_quality_score'].mean():.2f}")
-        logger.info(f"Price range: ₹{products_df['price'].min(
-        ):.0f} - ₹{products_df['price'].max():.0f}")
+        logger.info(f"Product validation complete. Average quality score: {products_df['data_quality_score'].mean():.2f}")
+        logger.info(f"Price range: ₹{products_df['price'].min():.0f} - ₹{products_df['price'].max():.0f}")
 
         # Add missing default columns if not present
         if 'enhanced_primary_style' not in products_df.columns:
@@ -974,15 +972,11 @@ class SupabaseMainOutfitsGenerator:
                 if data['score'] > 0.7:
                     confidence_indicator = "✓" if data['confidence'] > 0.9 else "~"
                     explanations.append(
-                        f"{confidence_indicator} Strong {
-                            component.replace(
-                                '_', ' ').title()}")
+                        f"{confidence_indicator} Strong {component.replace('_', ' ').title()}")
                 elif data['score'] < 0.3:
                     confidence_indicator = "✓" if data['confidence'] > 0.9 else "~"
                     explanations.append(
-                        f"{confidence_indicator} Weak {
-                            component.replace(
-                                '_', ' ').title()}")
+                        f"{confidence_indicator} Weak {component.replace('_', ' ').title()}")
 
             # Add overall confidence indicator
             if avg_confidence < 0.7:
@@ -1698,8 +1692,7 @@ class SupabaseMainOutfitsGenerator:
         valid_genders = ['Male', 'Female', 'Unisex']
         if user_data['Gender'] not in valid_genders:
             raise ValueError(
-                f"Invalid gender: {
-                    user_data['Gender']}. Must be one of {valid_genders}")
+                f"Invalid gender: {user_data['Gender']}. Must be one of {valid_genders}")
 
         # Add confidence scores for user preferences
         confidence_scores = {
@@ -1709,8 +1702,7 @@ class SupabaseMainOutfitsGenerator:
             'budget': 1.0 if 'Budget Preference' in user_data else 0.7}
 
         user_data['confidence_scores'] = confidence_scores
-        logger.info(f"User data validation complete. Average confidence: {
-                    sum(confidence_scores.values()) / len(confidence_scores):.2f}")
+        logger.info(f"User data validation complete. Average confidence: {sum(confidence_scores.values()) / len(confidence_scores):.2f}")
 
         return True
 
@@ -2011,8 +2003,7 @@ class SupabaseMainOutfitsGenerator:
 
         # Check color harmony
         if not check_color_harmony(top_color, bottom_color):
-            return False, f"Color combination {
-                top_color} + {bottom_color} may not be harmonious"
+            return False, f"Color combination {top_color} + {bottom_color} may not be harmonious"
 
         return True, "Outfit is compatible"
 
