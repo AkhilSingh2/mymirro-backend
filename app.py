@@ -643,9 +643,7 @@ class SimilarOutfits(Resource):
             if not _similar_outfits_ready:
                 try:
                     logger.info("🔄 Auto-initializing similar outfits models on first use...")
-                    from phase2_supabase_similar_outfits_api import SimilarOutfitsGenerator
-                    
-                    # Test initialization
+                    # Use the globally imported class instead of re-importing
                     test_generator = SimilarOutfitsGenerator()
                     _similar_outfits_ready = True
                     logger.info("✅ Similar outfits models auto-initialized successfully")
@@ -868,9 +866,7 @@ class SimilarProducts(Resource):
             if not _similar_products_ready:
                 try:
                     logger.info("🔄 Auto-initializing similar products models on first use...")
-                    from phase3_supabase_similar_products_api import SimilarProductsGenerator
-                    
-                    # Test initialization
+                    # Use the globally imported class instead of re-importing
                     test_generator = SimilarProductsGenerator()
                     _similar_products_ready = True
                     logger.info("✅ Similar products models auto-initialized successfully")
@@ -1408,8 +1404,8 @@ class ModelWarmup(Resource):
             # Try to warm up similar outfits
             if SIMILAR_OUTFITS_AVAILABLE and not _similar_outfits_ready:
                 try:
-                    from phase2_supabase_similar_outfits_api import SupabaseSimilarOutfitsGenerator
-                    generator = SupabaseSimilarOutfitsGenerator()
+                    # Use the globally imported class instead of re-importing
+                    generator = SimilarOutfitsGenerator()
                     # Try a quick initialization
                     logger.info("🔥 Warming up similar outfits models...")
                     _similar_outfits_ready = True
@@ -1420,8 +1416,8 @@ class ModelWarmup(Resource):
             # Try to warm up similar products
             if SIMILAR_PRODUCTS_AVAILABLE and not _similar_products_ready:
                 try:
-                    from phase3_supabase_similar_products_api import SupabaseEnhancedSimilarProductsGenerator
-                    generator = SupabaseEnhancedSimilarProductsGenerator()
+                    # Use the globally imported class instead of re-importing
+                    generator = SimilarProductsGenerator()
                     # Try a quick initialization
                     logger.info("🔥 Warming up similar products models...")
                     _similar_products_ready = True
@@ -1476,30 +1472,36 @@ class ImportDebug(Resource):
         
         # Test Phase 2 import
         try:
-            from phase2_supabase_similar_outfits_api import SupabaseSimilarOutfitsGenerator
-            results['phase2_import'] = 'SUCCESS'
+            # Use the globally imported class instead of re-importing
+            results['phase2_import'] = 'SUCCESS' if SIMILAR_OUTFITS_AVAILABLE else 'NOT_AVAILABLE'
             
             # Try to instantiate
-            try:
-                generator = SupabaseSimilarOutfitsGenerator()
-                results['phase2_instantiate'] = 'SUCCESS'
-            except Exception as e:
-                results['phase2_instantiate'] = f'FAILED: {str(e)}'
+            if SIMILAR_OUTFITS_AVAILABLE:
+                try:
+                    generator = SimilarOutfitsGenerator()
+                    results['phase2_instantiate'] = 'SUCCESS'
+                except Exception as e:
+                    results['phase2_instantiate'] = f'FAILED: {str(e)}'
+            else:
+                results['phase2_instantiate'] = 'NOT_AVAILABLE'
                 
         except Exception as e:
             results['phase2_import'] = f'FAILED: {str(e)}'
         
         # Test Phase 3 import
         try:
-            from phase3_supabase_similar_products_api import SupabaseEnhancedSimilarProductsGenerator
-            results['phase3_import'] = 'SUCCESS'
+            # Use the globally imported class instead of re-importing
+            results['phase3_import'] = 'SUCCESS' if SIMILAR_PRODUCTS_AVAILABLE else 'NOT_AVAILABLE'
             
             # Try to instantiate
-            try:
-                generator = SupabaseEnhancedSimilarProductsGenerator()
-                results['phase3_instantiate'] = 'SUCCESS'
-            except Exception as e:
-                results['phase3_instantiate'] = f'FAILED: {str(e)}'
+            if SIMILAR_PRODUCTS_AVAILABLE:
+                try:
+                    generator = SimilarProductsGenerator()
+                    results['phase3_instantiate'] = 'SUCCESS'
+                except Exception as e:
+                    results['phase3_instantiate'] = f'FAILED: {str(e)}'
+            else:
+                results['phase3_instantiate'] = 'NOT_AVAILABLE'
                 
         except Exception as e:
             results['phase3_import'] = f'FAILED: {str(e)}'
