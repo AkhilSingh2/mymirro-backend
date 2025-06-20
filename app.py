@@ -1066,28 +1066,45 @@ class TestSupabaseDirect(Resource):
             
             # Get credentials directly from environment
             supabase_url = os.getenv('SUPABASE_URL')
-            supabase_key = os.getenv('SUPABASE_ANON_KEY')
+            supabase_anon_key = os.getenv('SUPABASE_ANON_KEY')
+            supabase_service_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
             
-            if not supabase_url or not supabase_key:
-                return {
-                    'success': False,
-                    'error': 'Missing Supabase credentials',
-                    'supabase_url_exists': bool(supabase_url),
-                    'supabase_key_exists': bool(supabase_key)
-                }
+            results = {}
             
-            # Create direct client
-            client = create_client(supabase_url, supabase_key)
+            # Test with anon key
+            if supabase_url and supabase_anon_key:
+                try:
+                    client_anon = create_client(supabase_url, supabase_anon_key)
+                    result_anon = client_anon.table('tagged_products').select('*').limit(3).execute()
+                    results['anon_key'] = {
+                        'success': True,
+                        'data_count': len(result_anon.data) if result_anon.data else 0,
+                        'sample_data': result_anon.data[:1] if result_anon.data else None
+                    }
+                except Exception as e:
+                    results['anon_key'] = {'success': False, 'error': str(e)}
             
-            # Test basic query
-            result = client.table('tagged_products').select('*').limit(3).execute()
+            # Test with service role key
+            if supabase_url and supabase_service_key:
+                try:
+                    client_service = create_client(supabase_url, supabase_service_key)
+                    result_service = client_service.table('tagged_products').select('*').limit(3).execute()
+                    results['service_key'] = {
+                        'success': True,
+                        'data_count': len(result_service.data) if result_service.data else 0,
+                        'sample_data': result_service.data[:1] if result_service.data else None
+                    }
+                except Exception as e:
+                    results['service_key'] = {'success': False, 'error': str(e)}
             
             return {
                 'success': True,
                 'supabase_url': supabase_url,
-                'data_count': len(result.data) if result.data else 0,
-                'sample_data': result.data[:2] if result.data else None,
-                'raw_response_type': str(type(result))
+                'keys_available': {
+                    'anon_key': bool(supabase_anon_key),
+                    'service_key': bool(supabase_service_key)
+                },
+                'results': results
             }
             
         except Exception as e:
