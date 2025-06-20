@@ -5,6 +5,9 @@ from flask_restx import Api, Resource, fields
 import logging
 from typing import Dict, List, Tuple, Optional
 
+# Import database module
+from database import SupabaseDB
+
 # Setup logging first
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
