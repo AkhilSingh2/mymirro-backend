@@ -2,9 +2,7 @@
 # This generates 10 similar outfits for any given outfit in real-time using Supabase
 
 import pandas as pd
-import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer
 import json
 import os
 from datetime import datetime
@@ -12,6 +10,19 @@ import logging
 from typing import Dict, List, Tuple, Optional
 import warnings
 warnings.filterwarnings('ignore')
+
+# Graceful imports for optional ML dependencies
+try:
+    import faiss
+    FAISS_AVAILABLE = True
+except ImportError:
+    FAISS_AVAILABLE = False
+    
+try:
+    from sentence_transformers import SentenceTransformer
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
 
 # Import Supabase database functionality
 from database import get_db
@@ -30,6 +41,15 @@ class SupabaseSimilarOutfitsGenerator:
     def __init__(self, config: Dict = None):
         """Initialize the Supabase-enabled similar outfits generator."""
         self.config = config or self._default_config()
+        
+        # Check for required dependencies
+        if not FAISS_AVAILABLE:
+            logger.error("❌ FAISS not available. Similar outfits service requires FAISS for similarity search.")
+            raise ImportError("FAISS is required for similar outfits but not installed")
+            
+        if not SENTENCE_TRANSFORMERS_AVAILABLE:
+            logger.error("❌ SentenceTransformers not available. Similar outfits service requires sentence-transformers.")
+            raise ImportError("sentence-transformers is required for similar outfits but not installed")
         
         # Initialize Supabase database connection
         self.db = get_db()

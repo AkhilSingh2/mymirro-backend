@@ -2,9 +2,7 @@
 # Focus: Same product type with color/design diversity + user preference integration + Supabase DB
 
 import pandas as pd
-import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer
 import json
 import os
 from datetime import datetime
@@ -12,6 +10,19 @@ import logging
 from typing import Dict, List, Tuple, Optional, Union
 import warnings
 warnings.filterwarnings('ignore')
+
+# Graceful imports for optional ML dependencies
+try:
+    import faiss
+    FAISS_AVAILABLE = True
+except ImportError:
+    FAISS_AVAILABLE = False
+    
+try:
+    from sentence_transformers import SentenceTransformer
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
 
 # Import Supabase database functionality
 from database import get_db
@@ -30,6 +41,15 @@ class SupabaseEnhancedSimilarProductsGenerator:
     def __init__(self, config: Dict = None):
         """Initialize the Supabase-enabled enhanced similar products generator."""
         self.config = config or self._default_config()
+        
+        # Check for required dependencies
+        if not FAISS_AVAILABLE:
+            logger.error("❌ FAISS not available. Similar products service requires FAISS for similarity search.")
+            raise ImportError("FAISS is required for similar products but not installed")
+            
+        if not SENTENCE_TRANSFORMERS_AVAILABLE:
+            logger.error("❌ SentenceTransformers not available. Similar products service requires sentence-transformers.")
+            raise ImportError("sentence-transformers is required for similar products but not installed")
         
         # Initialize Supabase database connection
         self.db = get_db()

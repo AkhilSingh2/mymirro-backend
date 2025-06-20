@@ -6,9 +6,7 @@ Generates 50 main outfits per user using Supabase database with all enhancements
 """
 
 import pandas as pd
-import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer
 import json
 import os
 from datetime import datetime
@@ -16,6 +14,19 @@ import logging
 from typing import Dict, List, Tuple, Optional
 import warnings
 warnings.filterwarnings('ignore')
+
+# Graceful imports for optional ML dependencies
+try:
+    import faiss
+    FAISS_AVAILABLE = True
+except ImportError:
+    FAISS_AVAILABLE = False
+    
+try:
+    from sentence_transformers import SentenceTransformer
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
 
 # Import our Supabase database module
 from database import get_db
@@ -36,6 +47,15 @@ class SupabaseMainOutfitsGenerator:
         """Initialize the Supabase-enabled outfits generator with fashion designer intelligence."""
         self.config = config or self._default_config()
         self.db = get_db()
+        
+        # Check for required dependencies
+        if not FAISS_AVAILABLE:
+            logger.error("❌ FAISS not available. Outfit generation requires FAISS for similarity search.")
+            raise ImportError("FAISS is required for outfit generation but not installed")
+            
+        if not SENTENCE_TRANSFORMERS_AVAILABLE:
+            logger.error("❌ SentenceTransformers not available. Outfit generation requires sentence-transformers.")
+            raise ImportError("sentence-transformers is required for outfit generation but not installed")
         
         # Test database connection
         if not self.db.test_connection():
