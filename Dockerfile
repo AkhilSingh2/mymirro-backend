@@ -1,4 +1,4 @@
-# Railway-optimized Dockerfile
+# Railway-optimized Dockerfile with FAISS support
 FROM python:3.11-slim
 
 # Environment variables for Railway
@@ -9,16 +9,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install only essential system dependencies
+# Install system dependencies for ML libraries
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy minimal requirements for faster build
-COPY requirements-minimal.txt requirements.txt
+# Copy full requirements for complete functionality
+COPY requirements.txt .
 
-# Install minimal dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies with optimizations for Railway build
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy app files
 COPY app.py config.py database.py ./
@@ -38,6 +40,10 @@ RUN mkdir -p data/user_recommendations && \
 USER appuser
 
 EXPOSE 8000
+
+# Health check for Railway
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/api/v1/health || exit 1
 
 # Use direct Python for faster startup during development
 CMD ["python", "app.py"] 
