@@ -793,7 +793,13 @@ class Health(Resource):
         return {
             "status": "healthy",
             "service": "MyMirror Backend API",
-            "version": "1.0.0"
+            "version": "1.0.0",
+            "services": {
+                "outfits_available": OUTFITS_AVAILABLE,
+                "similar_outfits_available": SIMILAR_OUTFITS_AVAILABLE,
+                "similar_products_available": SIMILAR_PRODUCTS_AVAILABLE,
+                "color_analysis_available": COLOR_ANALYSIS_AVAILABLE
+            }
         }
 
 @color_ns.route('/analyze')
