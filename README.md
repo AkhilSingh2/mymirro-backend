@@ -276,3 +276,156 @@ A: Railway's free tier has memory limits. Consider upgrading for production use.
 ---
 
 **Built with ❤️ for the fashion-forward community** 
+
+## 📝 Complete API Documentation
+
+### **Swagger UI Available at: `/swagger/`**
+
+All endpoints are fully documented with interactive testing capabilities in Swagger UI:
+
+### **Color Analysis Namespace** (`/api/v1/color/`)
+- `POST /analyze` - Unified color analysis (photo OR hex input)
+- `POST /analyze-photo` - Photo-based skin tone analysis
+- `POST /analyze-hex` - Manual hex color analysis
+
+### **Outfits Namespace** (`/api/v1/outfits/`)
+- `POST /generate` - Generate 50 AI-curated outfits for a user
+- `GET /{user_id}` - Get user's outfit recommendations with filtering
+- `GET /{outfit_id}/similar` - Find similar outfits (Phase 2 AI)
+
+### **Products Namespace** (`/api/v1/products/`)
+- `POST /{product_id}/similar` - Find similar products (Phase 3 Enhanced AI)
+
+### **Health Namespace** (`/api/v1/health/`)
+- `GET /` - API health check and status
+
+### **Debug Namespace** (`/api/v1/debug/`)
+- `GET /data` - Database contents and statistics inspection
+- `GET /imports` - ML model import status and system info
+
+### **Test Namespace** (`/api/v1/test/`)
+- `GET /supabase-direct` - Direct database connectivity test
+
+### **Utils Namespace** (`/api/v1/utils/`)
+- `POST /warmup` - **OPTIONAL** model pre-initialization (auto-init available)
+
+## 🎯 Auto-Initialization (New!)
+
+**No warmup required for frontend integration!** 
+
+Phase 2 and Phase 3 APIs now automatically initialize their ML models on first use. Your Next.js frontend can directly call:
+- `/api/v1/outfits/{outfit_id}/similar` 
+- `/api/v1/products/{product_id}/similar`
+
+First requests may take 10-15 seconds for model initialization, subsequent requests are fast (~2-5 seconds).
+
+## 🔧 Quick Start
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Set environment variables
+cp env.example .env
+# Edit .env with your Supabase credentials
+
+# Run server
+python app.py
+```
+
+**API will be available at:** `http://localhost:8000`
+**Swagger UI:** `http://localhost:8000/swagger/`
+
+## 🌟 Key Endpoints for Frontend
+
+### 1. **Color Analysis** (Most Used)
+```javascript
+// POST /api/v1/color/analyze
+{
+  "image": "data:image/jpeg;base64,/9j/4AAQ..." // OR
+  "hex_color": "#FDB4A6"
+}
+```
+
+### 2. **Outfit Generation** 
+```javascript
+// POST /api/v1/outfits/generate
+{
+  "user_id": 2,
+  "regenerate": false
+}
+```
+
+### 3. **Get User Outfits**
+```javascript
+// GET /api/v1/outfits/2?limit=10&min_score=0.7
+```
+
+### 4. **Similar Outfits** (Phase 2)
+```javascript
+// GET /api/v1/outfits/main_2_1/similar?count=5
+```
+
+### 5. **Similar Products** (Phase 3)
+```javascript
+// POST /api/v1/products/ethnic_main_2_1/similar
+{
+  "count": 8,
+  "diverse": true,
+  "personalized": false
+}
+```
+
+## 🛠️ Development & Debugging
+
+Use the debug endpoints to troubleshoot:
+- `/api/v1/debug/data` - Check database contents
+- `/api/v1/debug/imports` - Verify ML model imports
+- `/api/v1/test/supabase-direct` - Test database connectivity
+
+## 🚀 Deployment
+
+Optimized for Railway deployment with:
+- CPU resource management
+- Automatic Railway environment detection
+- Conservative CPU limits (2-4 cores max)
+- Graceful fallbacks for missing dependencies
+
+## ⚡ Performance
+
+- **Color Analysis**: ~1-2 seconds
+- **Outfit Generation**: ~10-20 seconds (50 outfits)
+- **Similar Outfits**: ~3-10 seconds (with auto-init)
+- **Similar Products**: ~3-10 seconds (with auto-init)
+
+All response times include CPU optimization for cloud deployment.
+
+## 📁 Project Structure (Clean & Production-Ready)
+
+```
+mymirro-backend/
+├── app.py                                    # 🚀 Main Flask API application
+├── config.py                                 # ⚙️ Configuration management
+├── database.py                               # 🗄️ Supabase database wrapper
+├── color_analysis_api.py                     # 🎨 Color analysis API
+├── skin_tone_analyzer.py                     # 👤 Skin tone analysis engine
+├── phase1_supabase_outfits_generator.py      # 👔 AI outfit generation (Phase 1)
+├── phase2_supabase_similar_outfits_api.py    # 🔄 Similar outfits AI (Phase 2)
+├── phase3_supabase_similar_products_api.py   # 🛍️ Similar products AI (Phase 3)
+├── Colour map.xlsx                           # 🎨 Color mapping data
+├── requirements.txt                          # 📦 Full dependencies
+├── requirements-minimal.txt                  # 📦 Minimal dependencies  
+├── Dockerfile / Dockerfile.railway          # 🐳 Container configurations
+├── railway.toml                              # 🚄 Railway deployment config
+├── start.sh                                  # 🚀 Production startup script
+├── env.example                               # 🔐 Environment variables template
+├── create_user_outfits_table_enhanced.sql   # 📊 Database schema
+└── README.md / DEPLOY.md / CHECKLIST.md      # 📚 Documentation
+```
+
+**🎯 Optimized Structure:**
+- ✅ Single source of truth for each component
+- ✅ No duplicate or legacy files  
+- ✅ All test/demo files removed
+- ✅ Clean import structure
+- ✅ Production-ready deployment configs 

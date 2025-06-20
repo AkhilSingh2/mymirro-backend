@@ -66,6 +66,9 @@ color_ns = api.namespace('color', description='Color Analysis Operations')
 outfit_ns = api.namespace('outfits', description='Outfit Generation and Recommendations')
 products_ns = api.namespace('products', description='Product Similarity and Recommendations (Phase 3)')
 health_ns = api.namespace('health', description='Health Check Operations')
+debug_ns = api.namespace('debug', description='Debug and Development Operations')
+test_ns = api.namespace('test', description='Test and Utility Operations')
+utils_ns = api.namespace('utils', description='Utility Operations')
 
 # Define API models for request/response documentation
 color_request_model = api.model('ColorAnalysisRequest', {
@@ -137,6 +140,40 @@ color_response_model = api.model('ColorAnalysisResponse', {
 
 error_model = api.model('Error', {
     'error': fields.String(description='Error message')
+})
+
+# Debug and Utility Models
+debug_data_response_model = api.model('DebugDataResponse', {
+    'success': fields.Boolean(description='Request success'),
+    'users_table_count': fields.Integer(description='Number of users in database'),
+    'tagged_products_count': fields.Integer(description='Number of tagged products'),
+    'user_outfits_count': fields.Integer(description='Number of user outfits'),
+    'sample_users': fields.List(fields.Raw, description='Sample user data'),
+    'sample_products': fields.List(fields.Raw, description='Sample product data'),
+    'sample_outfits': fields.List(fields.Raw, description='Sample outfit data'),
+    'database_status': fields.String(description='Database connection status')
+})
+
+import_debug_response_model = api.model('ImportDebugResponse', {
+    'imports': fields.Raw(description='Import status for all modules'),
+    'availability': fields.Raw(description='Feature availability flags'),
+    'system_info': fields.Raw(description='System information'),
+    'cpu_optimization': fields.Raw(description='CPU optimization settings')
+})
+
+warmup_response_model = api.model('WarmupResponse', {
+    'success': fields.Boolean(description='Warmup success'),
+    'similar_outfits_ready': fields.Boolean(description='Similar outfits model status'),
+    'similar_products_ready': fields.Boolean(description='Similar products model status'),
+    'initialization_time': fields.Float(description='Time taken to initialize models'),
+    'message': fields.String(description='Status message')
+})
+
+supabase_test_response_model = api.model('SupabaseTestResponse', {
+    'success': fields.Boolean(description='Test success'),
+    'tables': fields.Raw(description='Available tables'),
+    'connection_status': fields.String(description='Connection status'),
+    'sample_data': fields.Raw(description='Sample data from tables')
 })
 
 health_response_model = api.model('HealthResponse', {
@@ -590,7 +627,9 @@ class SimilarOutfits(Resource):
         - `/api/v1/outfits/main_2_1/similar?count=5`
         - `/api/v1/outfits/main_2_3/similar` (default count=10)
         
-        **Note:** The source outfit must exist in the database (generated via Phase 1).
+        **Note:** 
+        - The source outfit must exist in the database (generated via Phase 1)
+        - Models auto-initialize on first use (no warmup needed)
         """
         try:
             if not SIMILAR_OUTFITS_AVAILABLE:
@@ -599,16 +638,26 @@ class SimilarOutfits(Resource):
                     'message': 'Similar outfits service is not available - FAISS and sentence-transformers are required but not installed. This feature is disabled to reduce deployment size.'
                 }, 503
             
-            # Quick readiness check
+            # Auto-initialize models on first use (Frontend-friendly)
             global _similar_outfits_ready
             if not _similar_outfits_ready:
-                return {
-                    'success': False,
-                    'message': 'Similar outfits models are not ready yet. Please call /api/v1/warmup first to initialize models.',
-                    'ready': False,
-                    'suggestion': 'POST to /api/v1/warmup to initialize models, then retry this request',
-                    'warmup_endpoint': '/api/v1/warmup'
-                }, 503
+                try:
+                    logger.info("🔄 Auto-initializing similar outfits models on first use...")
+                    from phase2_supabase_similar_outfits_api import SimilarOutfitsGenerator
+                    
+                    # Test initialization
+                    test_generator = SimilarOutfitsGenerator()
+                    _similar_outfits_ready = True
+                    logger.info("✅ Similar outfits models auto-initialized successfully")
+                except Exception as e:
+                    logger.error(f"❌ Failed to auto-initialize similar outfits models: {e}")
+                    return {
+                        'success': False,
+                        'message': 'Failed to initialize similar outfits models. This may be due to missing dependencies or resource constraints.',
+                        'ready': False,
+                        'auto_init_failed': True,
+                        'error': str(e)
+                    }, 503
             
             # Get query parameters
             count = request.args.get('count', 10, type=int)
@@ -804,6 +853,8 @@ class SimilarProducts(Resource):
         - "Show me similar shirts in different colors"
         - "Find formal wear like this but in my preferred style"
         - "Recommend similar products within my budget"
+        
+        **Note:** Models auto-initialize on first use (no warmup needed)
         """
         try:
             if not SIMILAR_PRODUCTS_AVAILABLE:
@@ -812,16 +863,26 @@ class SimilarProducts(Resource):
                     'message': 'Similar products service is not available - FAISS and sentence-transformers are required but not installed. This feature is disabled to reduce deployment size.'
                 }, 503
             
-            # Quick readiness check
+            # Auto-initialize models on first use (Frontend-friendly)
             global _similar_products_ready
             if not _similar_products_ready:
-                return {
-                    'success': False,
-                    'message': 'Similar products models are not ready yet. Please call /api/v1/warmup first to initialize models.',
-                    'ready': False,
-                    'suggestion': 'POST to /api/v1/warmup to initialize models, then retry this request',
-                    'warmup_endpoint': '/api/v1/warmup'
-                }, 503
+                try:
+                    logger.info("🔄 Auto-initializing similar products models on first use...")
+                    from phase3_supabase_similar_products_api import SimilarProductsGenerator
+                    
+                    # Test initialization
+                    test_generator = SimilarProductsGenerator()
+                    _similar_products_ready = True
+                    logger.info("✅ Similar products models auto-initialized successfully")
+                except Exception as e:
+                    logger.error(f"❌ Failed to auto-initialize similar products models: {e}")
+                    return {
+                        'success': False,
+                        'message': 'Failed to initialize similar products models. This may be due to missing dependencies or resource constraints.',
+                        'ready': False,
+                        'auto_init_failed': True,
+                        'error': str(e)
+                    }, 503
             
             import time
             import signal
@@ -1126,11 +1187,30 @@ class HexColorAnalysis(Resource):
             logger.error(f"Error in analyze_color_hex endpoint: {e}")
             api.abort(500, "Internal server error")
 
-@api.route('/debug/data')
+@debug_ns.route('/data')
 class DebugData(Resource):
     @api.doc('debug_data_check')
+    @api.marshal_with(debug_data_response_model)
+    @api.response(200, 'Success', debug_data_response_model)
+    @api.response(500, 'Internal Server Error', error_model)
     def get(self):
-        """Debug endpoint to check available data in database"""
+        """
+        Debug endpoint to check available data in database
+        
+        **Purpose:** Development and debugging tool to inspect database contents
+        
+        **Returns:**
+        - Database table counts (users, products, outfits)
+        - Sample data from each table
+        - Database connection status
+        - Helpful for troubleshooting data issues
+        
+        **Use Cases:**
+        - Verify data was imported correctly
+        - Check user outfit counts before testing APIs
+        - Debug database connection issues
+        - Inspect sample data structure
+        """
         try:
             db = SupabaseDB()
             
@@ -1205,11 +1285,32 @@ class DebugData(Resource):
                 'error': f'Debug check failed: {e}'
             }, 500
 
-@api.route('/test/supabase-direct')
+@test_ns.route('/supabase-direct')
 class TestSupabaseDirect(Resource):
     @api.doc('test_supabase_direct')
+    @api.marshal_with(supabase_test_response_model)
+    @api.response(200, 'Success', supabase_test_response_model)
+    @api.response(500, 'Internal Server Error', error_model)
     def get(self):
-        """Direct Supabase test to bypass database wrapper"""
+        """
+        Direct Supabase test to bypass database wrapper
+        
+        **Purpose:** Low-level database connectivity test
+        
+        **What it does:**
+        - Tests direct Supabase client connection
+        - Lists available database tables
+        - Fetches sample data from key tables
+        - Bypasses the database wrapper for raw access
+        
+        **Use Cases:**
+        - Debug database connectivity issues
+        - Verify Supabase credentials and permissions
+        - Check if tables exist and are accessible
+        - Troubleshoot data structure issues
+        
+        **Security Note:** Only use in development/debugging
+        """
         try:
             from supabase import create_client
             import os
@@ -1264,11 +1365,33 @@ class TestSupabaseDirect(Resource):
                 'error_type': str(type(e))
             }
 
-@api.route('/warmup')
+@utils_ns.route('/warmup')
 class ModelWarmup(Resource):
     @api.doc('warmup_models')
+    @api.marshal_with(warmup_response_model)
+    @api.response(200, 'Success', warmup_response_model)
+    @api.response(500, 'Internal Server Error', error_model)
     def post(self):
-        """Warm up ML models for Phase 2 and Phase 3 APIs"""
+        """
+        Warm up ML models for Phase 2 and Phase 3 APIs (Optional)
+        
+        **Note:** This endpoint is now OPTIONAL as models auto-initialize on first use.
+        You can still use it to pre-warm models for faster first requests.
+        
+        **Use Cases:**
+        - Pre-initialize models during app startup for faster user experience
+        - Force re-initialization of models if needed
+        - Check current model initialization status
+        
+        **Response:**
+        - success: Whether warmup completed successfully
+        - similar_outfits_ready: Phase 2 model status
+        - similar_products_ready: Phase 3 model status
+        - initialization_time: Time taken to initialize
+        
+        **Frontend Integration:**
+        Your Next.js app does NOT need to call this endpoint. APIs will auto-initialize.
+        """
         global _similar_outfits_ready, _similar_products_ready, _warmup_in_progress
         
         if _warmup_in_progress:
@@ -1324,11 +1447,31 @@ class ModelWarmup(Resource):
         finally:
             _warmup_in_progress = False
 
-@api.route('/debug/imports')
+@debug_ns.route('/imports')
 class ImportDebug(Resource):
     @api.doc('debug_imports')
+    @api.marshal_with(import_debug_response_model)
+    @api.response(200, 'Success', import_debug_response_model)
     def get(self):
-        """Debug import issues for Phase 2 and 3"""
+        """
+        Debug import issues for Phase 2 and Phase 3 APIs
+        
+        **Purpose:** Troubleshoot ML model import and availability issues
+        
+        **Returns:**
+        - Import status for all critical modules (FAISS, sentence-transformers, etc.)
+        - Feature availability flags (Phase 2, Phase 3, Color Analysis)
+        - System information (CPU limits, Railway detection)
+        - CPU optimization settings
+        
+        **Use Cases:**
+        - Debug why APIs return 503 errors
+        - Check if ML dependencies are properly installed
+        - Verify CPU optimization settings on Railway
+        - Troubleshoot import failures
+        
+        **Development Tool:** Essential for debugging deployment issues
+        """
         results = {}
         
         # Test Phase 2 import
