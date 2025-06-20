@@ -261,21 +261,21 @@ similar_products_response_model = api.model('SimilarProductsResponse', {
 
 # Graceful imports for optional ML dependencies
 try:
-    from phase1_supabase_outfits_generator import OutfitGenerator
+    from phase1_supabase_outfits_generator import SupabaseMainOutfitsGenerator as OutfitGenerator
     OUTFITS_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Outfit generation not available: {e}")
     OUTFITS_AVAILABLE = False
 
 try:
-    from phase2_supabase_similar_outfits_api import SimilarOutfitsGenerator
+    from phase2_supabase_similar_outfits_api import SupabaseSimilarOutfitsGenerator as SimilarOutfitsGenerator
     SIMILAR_OUTFITS_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Similar outfits not available: {e}")
     SIMILAR_OUTFITS_AVAILABLE = False
 
 try:
-    from phase3_supabase_similar_products_api import SimilarProductsGenerator
+    from phase3_supabase_similar_products_api import SupabaseEnhancedSimilarProductsGenerator as SimilarProductsGenerator
     SIMILAR_PRODUCTS_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Similar products not available: {e}")
@@ -303,8 +303,8 @@ class OutfitGeneration(Resource):
             if not OUTFITS_AVAILABLE:
                 return {
                     'success': False,
-                    'message': 'Outfit generation service is not available'
-                }, 500
+                    'message': 'Outfit generation service is not available - FAISS and sentence-transformers are required but not installed. This feature is disabled to reduce deployment size.'
+                }, 503
             
             data = request.get_json()
             if not data:
@@ -404,8 +404,8 @@ class UserOutfits(Resource):
             if not OUTFITS_AVAILABLE:
                 return {
                     'success': False,
-                    'message': 'Outfit service is not available'
-                }, 500
+                    'message': 'Outfit service is not available - FAISS and sentence-transformers are required but not installed. This feature is disabled to reduce deployment size.'
+                }, 503
             
             # Get query parameters
             limit = request.args.get('limit', type=int)
@@ -536,8 +536,8 @@ class SimilarOutfits(Resource):
             if not SIMILAR_OUTFITS_AVAILABLE:
                 return {
                     'success': False,
-                    'message': 'Similar outfits service is not available'
-                }, 500
+                    'message': 'Similar outfits service is not available - FAISS and sentence-transformers are required but not installed. This feature is disabled to reduce deployment size.'
+                }, 503
             
             # Get query parameters
             count = request.args.get('count', 10, type=int)
@@ -696,8 +696,8 @@ class SimilarProducts(Resource):
             if not SIMILAR_PRODUCTS_AVAILABLE:
                 return {
                     'success': False,
-                    'message': 'Similar products service is not available'
-                }, 500
+                    'message': 'Similar products service is not available - FAISS and sentence-transformers are required but not installed. This feature is disabled to reduce deployment size.'
+                }, 503
             
             import time
             start_time = time.time()
