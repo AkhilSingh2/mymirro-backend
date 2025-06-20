@@ -836,7 +836,7 @@ class ColorAnalysis(Resource):
         
         **Request Examples:**
         ```
-        Photo mode: {"image": "data:image/jpeg;base64,/9j/4AAQ..."}
+        Photo mode: {"image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQ...}
         Manual mode: {"hex_color": "#FDB4A6"}
         ```
         
@@ -1054,6 +1054,48 @@ class DebugData(Resource):
                 'success': False,
                 'error': f'Debug check failed: {e}'
             }, 500
+
+@api.route('/test/supabase-direct')
+class TestSupabaseDirect(Resource):
+    @api.doc('test_supabase_direct')
+    def get(self):
+        """Direct Supabase test to bypass database wrapper"""
+        try:
+            from supabase import create_client
+            import os
+            
+            # Get credentials directly from environment
+            supabase_url = os.getenv('SUPABASE_URL')
+            supabase_key = os.getenv('SUPABASE_ANON_KEY')
+            
+            if not supabase_url or not supabase_key:
+                return {
+                    'success': False,
+                    'error': 'Missing Supabase credentials',
+                    'supabase_url_exists': bool(supabase_url),
+                    'supabase_key_exists': bool(supabase_key)
+                }
+            
+            # Create direct client
+            client = create_client(supabase_url, supabase_key)
+            
+            # Test basic query
+            result = client.table('tagged_products').select('*').limit(3).execute()
+            
+            return {
+                'success': True,
+                'supabase_url': supabase_url,
+                'data_count': len(result.data) if result.data else 0,
+                'sample_data': result.data[:2] if result.data else None,
+                'raw_response_type': str(type(result))
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'error_type': str(type(e))
+            }
 
 # Add a root endpoint to redirect to Swagger UI
 @app.route('/')
