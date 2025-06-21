@@ -101,7 +101,7 @@ class SupabaseDB:
                     wear_type: Optional[str] = None,
                     gender: Optional[str] = None,
                     style: Optional[str] = None,
-                    limit: Optional[int] = None) -> pd.DataFrame:
+                    limit: Optional[int] = 5000) -> pd.DataFrame:
         """
         Get product data from Supabase tagged_products table with enhanced tags.
         
@@ -123,10 +123,10 @@ class SupabaseDB:
             
             # Apply filters based on tagged_products table structure
             if wear_type:
-                query = query.ilike('category', f'%{wear_type}%')
+                query = query.ilike('scraped_category', f'%{wear_type}%')
             if gender:
-                # Filter based on category pattern or other available fields
-                pass
+                # Filter based on gender field (already available)
+                query = query.ilike('gender', f'%{gender}%')
             if style:
                 query = query.ilike('primary_style', f'%{style}%')
             if limit:
@@ -142,13 +142,19 @@ class SupabaseDB:
                 if 'product_id' in df.columns:
                     df['id'] = df['product_id']
                 
+                # Add category field mapping from scraped_category
+                if 'scraped_category' in df.columns and 'category' not in df.columns:
+                    df['category'] = df['scraped_category']
+                
                 # Add missing columns that the outfit generator expects
                 if 'wear_type' not in df.columns:
-                    df['wear_type'] = df['category'].apply(self._categorize_wear_type)
+                    # Use scraped_category instead of category
+                    df['wear_type'] = df['scraped_category'].apply(self._categorize_wear_type)
                 
+                # Gender is already available in the tagged_products table, no need to infer
                 if 'gender' not in df.columns:
-                    # Infer gender from category
-                    df['gender'] = df['category'].apply(self._infer_gender_from_category)
+                    # Infer gender from scraped_category if needed
+                    df['gender'] = df['scraped_category'].apply(self._infer_gender_from_category)
                 
                 # Use enhanced tags from tagged_products - these are already available!
                 if 'final_caption' not in df.columns:
@@ -170,21 +176,22 @@ class SupabaseDB:
             logger.error(f"❌ Error fetching products: {e}")
             return pd.DataFrame()
     
-    def _categorize_wear_type(self, category: str) -> str:
-        """Categorize products into wear types based on category."""
-        if not category:
+    def _categorize_wear_type(self, scraped_category: str) -> str:
+        """Categorize products into wear types based on scraped_category."""
+        if not scraped_category:
             return 'Upperwear'
         
-        category_lower = category.lower()
+        category_lower = scraped_category.lower()
         
-        # Classify based on your actual product categories
+        # Classify based on your actual product categories from scraped_category
         if any(word in category_lower for word in [
             'kurta', 'shirt', 'top', 'blouse', 'jacket', 'sweater', 'tee', 'tank',
-            'ethnic', 'print', 'cotton', 'motifs'
+            'ethnic', 'print', 'cotton', 'motifs', 'formal-top', 'casual-top'
         ]):
             return 'Upperwear'
         elif any(word in category_lower for word in [
-            'pant', 'jean', 'trouser', 'short', 'skirt', 'bottom', 'pajama', 'salwar'
+            'pant', 'jean', 'trouser', 'short', 'skirt', 'bottom', 'pajama', 'salwar',
+            'formal-bottom', 'casual-bottom'
         ]):
             return 'Bottomwear'
         elif any(word in category_lower for word in [
@@ -195,12 +202,12 @@ class SupabaseDB:
             # For your data, most items seem to be ethnic wear (kurtas)
             return 'Upperwear'  # Default
     
-    def _infer_gender_from_category(self, category: str) -> str:
-        """Infer gender from product category."""
-        if not category:
+    def _infer_gender_from_category(self, scraped_category: str) -> str:
+        """Infer gender from product scraped_category."""
+        if not scraped_category:
             return 'Unisex'
         
-        category_lower = category.lower()
+        category_lower = scraped_category.lower()
         
         if any(word in category_lower for word in ['women', 'female', 'ladies']):
             return 'Women'
