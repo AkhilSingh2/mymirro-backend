@@ -600,36 +600,31 @@ class SimilarOutfits(Resource):
     @api.response(500, 'Internal Server Error', error_model)
     def get(self, outfit_id):
         """
-        Find similar outfits for a given outfit using advanced AI similarity
+        Find outfits similar to a given outfit using AI-powered semantic analysis
         
-        This endpoint uses Phase 2 AI-powered similarity matching to find outfits
-        that are similar to a given main outfit. It employs:
+        This endpoint uses advanced AI to find outfits that are semantically and stylistically 
+        similar to the provided outfit. The similarity analysis considers multiple factors:
         
-        **Advanced Similarity Factors:**
-        - 🔍 **Semantic Similarity**: AI-powered text matching of product descriptions
-        - 👔 **Style Harmony**: Fashion style compatibility and formality matching
-        - 🎨 **Color Theory**: Professional color harmony and coordination rules
-        - 📐 **Pattern Compatibility**: Smart pattern mixing guidelines
-        - 💰 **Price Range**: Similar budget/price point matching
-        - 🎯 **Occasion Matching**: Event and use-case appropriateness
-        - 🌟 **Quality Scoring**: Product quality and versatility factors
+        **🎯 8-Factor Fashion Intelligence:**
+        - **Semantic Similarity**: AI understanding of clothing descriptions and style concepts
+        - **Style Harmony**: Compatibility between different fashion styles (formal, casual, etc.)
+        - **Color Harmony**: Color theory and coordination principles  
+        - **Formality Matching**: Matching appropriate formality levels
+        - **Pattern Compatibility**: Coordination of patterns, textures, and prints
+        - **Price Similarity**: Similar price ranges for practical shopping
+        - **Occasion Matching**: Suitability for similar occasions and contexts
+        - **Seasonal Appropriateness**: Weather and seasonal suitability
         
-        **Input:**
-        - outfit_id: Main outfit ID from Phase 1 (e.g., "main_2_1")
-        - count: Number of similar outfits to return (default: 10)
+        **🚀 Performance:**
+        - Uses FAISS vector search for fast semantic similarity
+        - Typically returns results in 15-30 seconds
+        - Models auto-initialize on first use
         
-        **Output:**
-        - List of similar outfits ranked by similarity score
-        - Detailed score breakdowns for each factor
-        - Real-time generation (typically 2-5 seconds)
-        
-        **Examples:**
+        **📝 Usage Examples:**
         - `/api/v1/outfits/main_2_1/similar?count=5`
         - `/api/v1/outfits/main_2_3/similar` (default count=10)
         
-        **Note:** 
-        - The source outfit must exist in the database (generated via Phase 1)
-        - Models auto-initialize on first use (no warmup needed)
+        **Note:** First request may take longer due to model initialization
         """
         try:
             if not SIMILAR_OUTFITS_AVAILABLE:
@@ -637,7 +632,7 @@ class SimilarOutfits(Resource):
                     'success': False,
                     'message': 'Similar outfits service is not available - FAISS and sentence-transformers are required but not installed. This feature is disabled to reduce deployment size.'
                 }, 503
-            
+                
             # Auto-initialize models on first use (Frontend-friendly)
             global _similar_outfits_ready
             if not _similar_outfits_ready:
@@ -666,58 +661,25 @@ class SimilarOutfits(Resource):
                     'success': False,
                     'message': 'Count must be between 1 and 50'
                 }, 400
-            
-            # Initialize similar outfits generator with timeout protection
+
             import time
-            import signal
-            from contextlib import contextmanager
-            
-            @contextmanager
-            def timeout_handler(seconds):
-                def timeout_signal(signum, frame):
-                    raise TimeoutError(f"Operation timed out after {seconds} seconds")
-                
-                old_handler = signal.signal(signal.SIGALRM, timeout_signal)
-                signal.alarm(seconds)
-                try:
-                    yield
-                finally:
-                    signal.alarm(0)
-                    signal.signal(signal.SIGALRM, old_handler)
-            
             start_time = time.time()
             
-            try:
-                # Initialize generator first (this is usually fast)
-                generator = SimilarOutfitsGenerator()
-                logger.info(f"🔍 Finding {count} similar outfits for outfit {outfit_id}")
-                
-                # Try a quick warmup first to check if models are ready
-                try:
-                    # Quick test to see if generator is ready (should be fast)
-                    test_start = time.time()
-                    generator._ensure_models_loaded()  # Pre-warm models if they have this method
-                    warmup_time = time.time() - test_start
-                    logger.info(f"⚡ Model warmup completed in {warmup_time:.2f}s")
-                except (AttributeError, Exception) as e:
-                    logger.info(f"⚠️ Model warmup not available or failed: {e}")
-                
-                # Use Railway-compatible timeout (25s to be safe)
-                with timeout_handler(25):
-                    similar_outfits = generator.find_similar_outfits(outfit_id, num_similar=count)
-                    
-            except TimeoutError:
-                logger.warning(f"Similar outfits search timed out for outfit {outfit_id} - responding with retry message")
-                return {
-                    'success': False,
-                    'message': 'Processing is taking longer than expected due to ML model initialization. This is normal for the first few requests.',
-                    'timeout': True,
-                    'suggestion': 'Please retry this request in 30-60 seconds. Subsequent requests will be much faster.',
-                    'error_code': 'INITIAL_INDEXING',
-                    'retry_recommended': True,
-                    'estimated_ready_time': '30-60 seconds'
-                }, 202  # 202 Accepted - processing but not complete
+            # Initialize generator and find similar outfits
+            generator = SimilarOutfitsGenerator()
+            logger.info(f"🔍 Finding {count} similar outfits for outfit {outfit_id}")
             
+            # Try a quick warmup first to check if models are ready
+            try:
+                test_start = time.time()
+                generator._ensure_models_loaded()  # Pre-warm models if they have this method
+                warmup_time = time.time() - test_start
+                logger.info(f"⚡ Model warmup completed in {warmup_time:.2f}s")
+            except (AttributeError, Exception) as e:
+                logger.info(f"⚠️ Model warmup not available or failed: {e}")
+            
+            # Find similar outfits  
+            similar_outfits = generator.find_similar_outfits(outfit_id, num_similar=count)
             search_time = time.time() - start_time
             
             if not similar_outfits:
