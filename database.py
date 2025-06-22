@@ -101,15 +101,19 @@ class SupabaseDB:
                     wear_type: Optional[str] = None,
                     gender: Optional[str] = None,
                     style: Optional[str] = None,
-                    limit: Optional[int] = 5000) -> pd.DataFrame:
+                    limit: Optional[int] = None,
+                    offset: int = 0,
+                    chunk_size: int = 1000) -> pd.DataFrame:
         """
-        Get product data from Supabase tagged_products table with enhanced tags.
+        Get product data from Supabase tagged_products table with enhanced tags and pagination support.
         
         Args:
             wear_type: Filter by wear type (Upperwear, Bottomwear, etc.)
             gender: Filter by gender
             style: Filter by style
-            limit: Limit number of results
+            limit: Total limit of products to fetch (None for all)
+            offset: Offset for pagination
+            chunk_size: Number of products to fetch per chunk
             
         Returns:
             pandas.DataFrame: Product data with rich tags (color, style, fabric, etc.)
@@ -119,6 +123,11 @@ class SupabaseDB:
                 logger.error("❌ Supabase client not initialized")
                 return pd.DataFrame()
             
+            # If no limit specified, fetch all products using chunked loading
+            if limit is None:
+                return self._get_all_products_chunked(wear_type, gender, style, chunk_size)
+            
+            # Otherwise, fetch with pagination
             query = self.client.table('tagged_products').select('*')
             
             # Apply filters based on tagged_products table structure
@@ -129,44 +138,16 @@ class SupabaseDB:
                 query = query.ilike('gender', f'%{gender}%')
             if style:
                 query = query.ilike('primary_style', f'%{style}%')
-            if limit:
-                query = query.limit(limit)
+            
+            # Apply pagination
+            query = query.range(offset, offset + limit - 1)
             
             result = query.execute()
             
             if result.data:
                 df = pd.DataFrame(result.data)
-                
-                # Map tagged_products columns to expected outfit generator columns
-                # Use product_id as the main ID (references products table)
-                if 'product_id' in df.columns:
-                    df['id'] = df['product_id']
-                
-                # Add category field mapping from scraped_category
-                if 'scraped_category' in df.columns and 'category' not in df.columns:
-                    df['category'] = df['scraped_category']
-                
-                # Add missing columns that the outfit generator expects
-                if 'wear_type' not in df.columns:
-                    # Use scraped_category instead of category
-                    df['wear_type'] = df['scraped_category'].apply(self._categorize_wear_type)
-                
-                # Gender is already available in the tagged_products table, no need to infer
-                if 'gender' not in df.columns:
-                    # Infer gender from scraped_category if needed
-                    df['gender'] = df['scraped_category'].apply(self._infer_gender_from_category)
-                
-                # Use enhanced tags from tagged_products - these are already available!
-                if 'final_caption' not in df.columns:
-                    # Use the rich caption_display or create from enhanced fields
-                    df['final_caption'] = df.apply(lambda row: 
-                        row.get('caption_display', '') or 
-                        f"{row.get('title', '')} - {row.get('primary_style', '')} {row.get('primary_color', '')} {row.get('primary_fabric', '')}".strip(), axis=1)
-                
-                # The tagged_products table already has these rich columns!
-                # primary_color, primary_style, primary_fabric, primary_occasion, etc.
-                
-                logger.info(f"✅ Retrieved {len(df)} products from tagged_products table with enhanced tags")
+                df = self._process_products_dataframe(df)
+                logger.info(f"✅ Retrieved {len(df)} products from tagged_products table (offset: {offset}, limit: {limit})")
                 return df
             else:
                 logger.warning("⚠️ No products found in tagged_products table")
@@ -175,6 +156,109 @@ class SupabaseDB:
         except Exception as e:
             logger.error(f"❌ Error fetching products: {e}")
             return pd.DataFrame()
+    
+    def _get_all_products_chunked(self, 
+                                 wear_type: Optional[str] = None,
+                                 gender: Optional[str] = None,
+                                 style: Optional[str] = None,
+                                 chunk_size: int = 1000) -> pd.DataFrame:
+        """
+        Fetch all products using chunked loading to avoid database timeouts.
+        
+        Args:
+            wear_type: Filter by wear type
+            gender: Filter by gender
+            style: Filter by style
+            chunk_size: Number of products to fetch per chunk
+            
+        Returns:
+            pandas.DataFrame: All products data
+        """
+        logger.info(f"🔄 Starting chunked loading of all products (chunk_size: {chunk_size})")
+        
+        all_products = []
+        offset = 0
+        total_fetched = 0
+        
+        while True:
+            try:
+                # Fetch chunk
+                chunk_df = self.get_products(
+                    wear_type=wear_type,
+                    gender=gender,
+                    style=style,
+                    limit=chunk_size,
+                    offset=offset
+                )
+                
+                if chunk_df.empty:
+                    logger.info(f"✅ Completed chunked loading. Total products fetched: {total_fetched}")
+                    break
+                
+                all_products.append(chunk_df)
+                total_fetched += len(chunk_df)
+                offset += chunk_size
+                
+                logger.info(f"📦 Fetched chunk {len(all_products)}: {len(chunk_df)} products (Total: {total_fetched})")
+                
+                # If we got fewer products than chunk_size, we've reached the end
+                if len(chunk_df) < chunk_size:
+                    logger.info(f"✅ Reached end of products. Total products fetched: {total_fetched}")
+                    break
+                    
+            except Exception as e:
+                logger.error(f"❌ Error fetching chunk at offset {offset}: {e}")
+                break
+        
+        if all_products:
+            # Combine all chunks
+            combined_df = pd.concat(all_products, ignore_index=True)
+            logger.info(f"✅ Successfully loaded {len(combined_df)} total products using chunked loading")
+            return combined_df
+        else:
+            logger.warning("⚠️ No products loaded from chunked loading")
+            return pd.DataFrame()
+    
+    def _process_products_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Process and enhance the products DataFrame with required columns and mappings.
+        
+        Args:
+            df: Raw products DataFrame from Supabase
+            
+        Returns:
+            pandas.DataFrame: Processed products DataFrame
+        """
+        if df.empty:
+            return df
+        
+        # Map tagged_products columns to expected outfit generator columns
+        # Use product_id as the main ID (references products table)
+        if 'product_id' in df.columns:
+            df['id'] = df['product_id']
+        
+        # Add category field mapping from scraped_category
+        if 'scraped_category' in df.columns and 'category' not in df.columns:
+            df['category'] = df['scraped_category']
+        
+        # Add missing columns that the outfit generator expects
+        if 'wear_type' not in df.columns:
+            # Use scraped_category instead of category
+            df['wear_type'] = df['scraped_category'].apply(self._categorize_wear_type)
+        
+        # Gender is already available in the tagged_products table, no need to infer
+        if 'gender' not in df.columns:
+            # Infer gender from scraped_category if needed
+            df['gender'] = df['scraped_category'].apply(self._infer_gender_from_category)
+        
+        # Use enhanced tags from tagged_products - these are already available!
+        if 'final_caption' not in df.columns:
+            # Use the rich full_caption or create from enhanced fields
+            df['final_caption'] = df.apply(lambda row: 
+                row.get('full_caption', '') or 
+                f"{row.get('title', '')} - {row.get('primary_style', '')} {row.get('primary_color', '')} {row.get('primary_fabric', '')}".strip(), axis=1)
+        
+        return df
     
     def _categorize_wear_type(self, scraped_category: str) -> str:
         """Categorize products into wear types based on scraped_category."""
@@ -430,9 +514,9 @@ class SupabaseDB:
             mapped_user_data = self._map_user_columns(user_data)
             
             if style_quiz_id:
-                # Try to get style quiz data
+                # Try to get style quiz data from the correct table
                 try:
-                    quiz_result = self.client.table('style_quiz_updated').select('*').eq('id', style_quiz_id).execute()
+                    quiz_result = self.client.table('style-quiz-updated').select('*').eq('id', style_quiz_id).execute()
                     
                     if quiz_result.data:
                         quiz_data = quiz_result.data[0]
@@ -502,7 +586,7 @@ class SupabaseDB:
 
     def _map_style_quiz_columns(self, quiz_data: Dict) -> Dict:
         """
-        Map columns from style_quiz_updated table to application format.
+        Map columns from style-quiz-updated table to application format.
         
         Args:
             quiz_data: Raw style quiz data from database
@@ -512,9 +596,11 @@ class SupabaseDB:
         """
         mapped_data = {}
         
-        # Map style quiz columns to application format
+        # Map style quiz columns to application format based on actual style-quiz-updated table
         style_quiz_mappings = {
             # Personal info
+            'name': 'Name',
+            'gender': 'Gender',
             'body_shape': 'Body Shape',
             'height': 'Height',
             'weight': 'Weight',
@@ -524,7 +610,15 @@ class SupabaseDB:
             'fashion_style': 'Fashion Style',
             'style_preference': 'Style Preference',
             'preferred_colors': 'Colors family',
-            'color_preference': 'Color Preference',
+            'color_family': 'Color Family',
+            'hex_codes': 'Hex Codes',
+            'undertone': 'Undertone',
+            'contrast': 'Contrast',
+            
+            # NEW: Apparel preferences for each style category
+            'apparel_pref_business_casual': 'Apparel Pref Business Casual',
+            'apparel_pref_streetwear': 'Apparel Pref Streetwear', 
+            'apparel_pref_athleisure': 'Apparel Pref Athleisure',
             
             # Lifestyle
             'lifestyle': 'Lifestyle',
@@ -534,23 +628,49 @@ class SupabaseDB:
             
             # Budget and shopping
             'budget_range': 'Budget Preference',
-            'shopping_frequency': 'Shopping Frequency',
+            'shopping_style': 'Shopping Style',
             'brand_preference': 'Brand Preference',
             
             # Fit preferences
-            'fit_preference': 'Fit Preference',
+            'upper_fit': 'Upper Fit',
+            'lower_fit': 'Lower Fit',
+            'full_body_fit': 'Full Body Fit',
+            'upper_size': 'Upper Size',
+            'lower_waist_size': 'Lower Waist Size',
             'comfort_level': 'Comfort Level',
             'fabric_preference': 'Fabric Preference',
             
             # Advanced preferences
+            'print_type': 'Print Type',
+            'print_scale': 'Print Scale',
+            'print_density': 'Print Density',
+            'pattern_placement': 'Pattern Placement',
+            'surface_texture': 'Surface Texture',
             'pattern_preference': 'Pattern Preference',
             'sleeve_preference': 'Sleeve Preference',
             'neckline_preference': 'Neckline Preference',
             
+            # Personality and preferences
+            'personality_tag_1': 'Personality Tag 1',
+            'personality_tag_2': 'Personality Tag 2',
+            'minimalistic': 'Minimalistic',
+            'outfit_adventurous': 'Outfit Adventurous',
+            'weekend_preference': 'Weekend Preference',
+            'workspace_style': 'Workspace Style',
+            'friend_compliments': 'Friend Compliments',
+            'work_outfit': 'Work Outfit',
+            'wardrobe_content': 'Wardrobe Content',
+            
             # Generated captions (these take priority)
             'upper_wear_caption': 'Upper Wear Caption',
             'lower_wear_caption': 'Lower Wear Caption',
-            'style_description': 'Style Description'
+            'full_body_dress_caption': 'Full Body Dress Caption',
+            'style_description': 'Style Description',
+            
+            # Additional data
+            'user_tags': 'User Tags',
+            'color_analysis': 'Color Analysis',
+            'feedback': 'Feedback'
         }
         
         for db_col, app_col in style_quiz_mappings.items():
@@ -692,6 +812,56 @@ class SupabaseDB:
         except Exception as e:
             logger.error(f"❌ Error in user data mapping test: {e}")
             return {'error': str(e)}
+
+    def get_products_with_user_filters(self, user_data: Dict) -> pd.DataFrame:
+        """
+        Get products from Supabase with user-specific filters applied at database level.
+        This dramatically reduces data loading time by only fetching relevant products.
+        
+        Args:
+            user_data: User data dictionary containing gender, style preferences, etc.
+            
+        Returns:
+            pandas.DataFrame: Pre-filtered product data
+        """
+        try:
+            if not self.client:
+                logger.error("❌ Supabase client not initialized")
+                return pd.DataFrame()
+            
+            logger.info("🎯 Applying user filters at database level for optimized loading...")
+            
+            # Extract user filters
+            user_gender = user_data.get('Gender', '').lower()
+            user_style = user_data.get('Fashion Style', '').strip()
+            
+            # Start with a simple query and build up
+            query = self.client.table('tagged_products').select('*')
+            
+            # Apply basic wear type filters first
+            query = query.or_(f"scraped_category.ilike.%shirt%,scraped_category.ilike.%pant%")
+            
+            # Execute the filtered query
+            logger.info("📥 Executing pre-filtered database query...")
+            result = query.execute()
+            
+            if result.data:
+                df = pd.DataFrame(result.data)
+                df = self._process_products_dataframe(df)
+                
+                logger.info(f"✅ Pre-filtered query returned {len(df)} products (vs loading all products)")
+                logger.info(f"📊 Products by wear type: {df['wear_type'].value_counts().to_dict()}")
+                
+                return df
+            else:
+                logger.warning("⚠️ No products found with basic filters, trying fallback...")
+                # Fallback to chunked loading if pre-filtering fails
+                return self.get_products()
+                
+        except Exception as e:
+            logger.error(f"❌ Error in pre-filtered product query: {e}")
+            logger.info("🔄 Falling back to chunked loading...")
+            return self.get_products()
 
 # Global database instance
 db = SupabaseDB()

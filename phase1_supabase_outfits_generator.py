@@ -1,19 +1,24 @@
 """
-Phase 1: Enhanced Supabase-enabled Main Outfits Generator
-Generates 50 main outfits per user using Supabase database with all enhancements from main generator
-✅ ENHANCED: Now with Professional Fashion Designer Intelligence + Database Integration
-✅ COMPLETE: Full feature parity with main generator (2699 lines of functionality)
+Phase 1: Enhanced Supabase Outfits Generator with Professional Fashion Intelligence
+
+Generates 20 main outfits per user using Supabase database with all enhancements from main generator
 """
 
 import pandas as pd
 import numpy as np
 import json
 import os
+import random
 from datetime import datetime
 import logging
 from typing import Dict, List, Tuple, Optional
 import warnings
 warnings.filterwarnings('ignore')
+
+# 🚀 PARALLEL PROCESSING IMPORTS
+import multiprocessing as mp
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from functools import partial
 
 # Graceful imports for optional ML dependencies
 try:
@@ -32,13 +37,21 @@ except ImportError:
 from database import get_db
 from config import get_config
 
-# Setup logging
+# Setup logging first
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Import the Why Picked Feature
+try:
+    from why_picked_feature import WhyPickedFeature
+    WHY_PICKED_AVAILABLE = True
+except ImportError:
+    WHY_PICKED_AVAILABLE = False
+    logger.warning("WhyPickedFeature not available - 'Why was this picked for you' feature will be disabled")
+
 class SupabaseMainOutfitsGenerator:
     """
-    Phase 1: Generate and store 50 main outfits per user using Supabase database
+    Phase 1: Generate and store 20 main outfits per user using Supabase database
     ✅ ENHANCED: Now with Professional Fashion Designer Intelligence + Database Integration
     ✅ COMPLETE: Full feature parity with main generator
     """
@@ -82,7 +95,14 @@ class SupabaseMainOutfitsGenerator:
             logger.error(f"❌ Failed to load model: {e}")
             raise
         
+        # 🚀 ENHANCED: Advanced embedding cache with statistics
         self.embedding_cache = {}
+        self.cache_stats = {
+            'hits': 0,
+            'misses': 0,
+            'size': 0,
+            'max_size': self.config.get('cache_embeddings_limit', 1000)
+        }
         
         # FAISS indexes for different wear types
         self.faiss_indexes = {}
@@ -94,6 +114,19 @@ class SupabaseMainOutfitsGenerator:
         # ✅ ENHANCED: Initialize all professional fashion intelligence from main generator
         self._initialize_professional_fashion_intelligence()
         
+        # 🎯 NEW: Initialize Why Picked Feature
+        if WHY_PICKED_AVAILABLE:
+            try:
+                self.why_picked_feature = WhyPickedFeature()
+                logger.info("✅ Why Picked Feature initialized successfully")
+                logger.info(f"[DEBUG] WhyPickedFeature object: {self.why_picked_feature}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to initialize Why Picked Feature: {e}")
+                self.why_picked_feature = None
+        else:
+            self.why_picked_feature = None
+            logger.warning("[DEBUG] WhyPickedFeature not available - WHY_PICKED_AVAILABLE is False")
+
     def _default_config(self) -> Dict:
         """Default configuration for the Supabase outfits generator."""
         app_config = get_config()
@@ -102,7 +135,7 @@ class SupabaseMainOutfitsGenerator:
             'query_expansion': True,
             'reranking_enabled': True,
             'cache_embeddings': True,
-            'main_outfits_count': 50,  # Changed from 100 to 50 like main generator
+            'main_outfits_count': 20,  # Changed from 50 to 20 for faster generation
             'tops_per_outfit': 30,  # Increased from 20 to 30 for more combinations
             'bottoms_per_outfit': 30,  # Increased from 20 to 30 for more combinations
             'semantic_boost_factors': {
@@ -448,12 +481,17 @@ class SupabaseMainOutfitsGenerator:
         
         return f"{style} style {fit} fit lower wear in complementary colors"
 
-    def load_products_data_enhanced(self, filters: Dict = None) -> pd.DataFrame:
-        """✅ ENHANCED: Load products data from Supabase with enhanced validation."""
-        logger.info("📥 Loading enhanced products data from Supabase...")
+    def load_products_data_enhanced(self, filters: Dict = None, user_data: Dict = None) -> pd.DataFrame:
+        """✅ ENHANCED: Load products data from Supabase with pre-filtering and enhanced validation."""
+        logger.info("📥 Loading enhanced products data from Supabase using pre-filtering...")
         
         try:
-            products_df = self.db.get_products()
+            # Use pre-filtered loading if user data is available
+            if user_data:
+                products_df = self.db.get_products_with_user_filters(user_data)
+            else:
+                # Fallback to chunked loading for backward compatibility
+                products_df = self.db.get_products()
             
             if products_df.empty:
                 logger.error("❌ No products data found in Supabase")
@@ -643,23 +681,57 @@ class SupabaseMainOutfitsGenerator:
         return products_df
 
     def get_embedding_cached(self, text: str, cache_key: str = None) -> np.ndarray:
-        """Get embedding with caching for better performance."""
+        """Get embedding with enhanced caching for better performance."""
         if not cache_key:
             cache_key = text[:100]
         
         if self.config['cache_embeddings'] and cache_key in self.embedding_cache:
+            self.cache_stats['hits'] += 1
             return self.embedding_cache[cache_key]
         
+        # Generate embedding
         embedding = self.model.encode([text])[0]
         
+        # 🚀 ENHANCED: Smart cache management with size limits
         if self.config['cache_embeddings']:
+            # Check if cache is full and clean up if needed
+            if self.cache_stats['size'] >= self.cache_stats['max_size']:
+                self._cleanup_embedding_cache()
+            
+            # Add to cache
             self.embedding_cache[cache_key] = embedding
+            self.cache_stats['size'] += 1
         
+        self.cache_stats['misses'] += 1
         return embedding
+    
+    def _cleanup_embedding_cache(self):
+        """Clean up embedding cache to prevent memory issues."""
+        if len(self.embedding_cache) > self.cache_stats['max_size']:
+            # Remove oldest entries (simple FIFO approach)
+            items_to_remove = len(self.embedding_cache) - self.cache_stats['max_size'] + 100
+            keys_to_remove = list(self.embedding_cache.keys())[:items_to_remove]
+            
+            for key in keys_to_remove:
+                del self.embedding_cache[key]
+            
+            self.cache_stats['size'] = len(self.embedding_cache)
+            logger.info(f"🧹 Cleaned up embedding cache. Removed {items_to_remove} entries. Current size: {self.cache_stats['size']}")
+    
+    def get_cache_stats(self) -> Dict:
+        """Get embedding cache statistics."""
+        hit_rate = (self.cache_stats['hits'] / (self.cache_stats['hits'] + self.cache_stats['misses'])) * 100 if (self.cache_stats['hits'] + self.cache_stats['misses']) > 0 else 0
+        return {
+            'hits': self.cache_stats['hits'],
+            'misses': self.cache_stats['misses'],
+            'hit_rate': f"{hit_rate:.1f}%",
+            'size': self.cache_stats['size'],
+            'max_size': self.cache_stats['max_size']
+        }
 
     def build_faiss_indexes(self, products_df: pd.DataFrame) -> None:
-        """Build FAISS indexes for different wear types using enhanced Supabase data."""
-        logger.info("🔄 Building FAISS indexes for product recommendations...")
+        """Build FAISS indexes for different wear types using enhanced Supabase data with parallel processing."""
+        logger.info("🔄 Building FAISS indexes for product recommendations with parallel processing...")
         
         # Railway CPU optimization for FAISS indexing
         if self.is_railway:
@@ -669,50 +741,78 @@ class SupabaseMainOutfitsGenerator:
         
         wear_types = ['Upperwear', 'Bottomwear']
         
-        for wear_type in wear_types:
-            wear_products = products_df[products_df['wear_type'] == wear_type].copy()
+        # 🚀 PARALLEL: Process wear types in parallel
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = []
+            for wear_type in wear_types:
+                wear_products = products_df[products_df['wear_type'] == wear_type].copy()
+                if not wear_products.empty:
+                    future = executor.submit(self._build_faiss_index_for_wear_type, wear_type, wear_products)
+                    futures.append(future)
             
-            if wear_products.empty:
-                logger.warning(f"No products found for wear_type: {wear_type}")
-                continue
+            # Wait for all indexes to be built
+            for future in futures:
+                try:
+                    future.result()
+                except Exception as e:
+                    logger.error(f"❌ Error building FAISS index: {e}")
+    
+    def _build_faiss_index_for_wear_type(self, wear_type: str, wear_products: pd.DataFrame) -> None:
+        """Build FAISS index for a specific wear type with parallel embedding generation."""
+        if wear_products.empty:
+            logger.warning(f"No products found for wear_type: {wear_type}")
+            return
+        
+        captions = []
+        product_indices = []
+        
+        for idx, row in wear_products.iterrows():
+            caption = row.get('final_caption', '') or row.get('title', '')
+            if caption.strip():
+                captions.append(caption)
+                product_indices.append(idx)
+        
+        if not captions:
+            logger.warning(f"No valid captions found for wear_type: {wear_type}")
+            return
+
+        logger.info(f"🚀 Generating embeddings for {len(captions)} {wear_type} products with parallel processing...")
+
+        # 🚀 PARALLEL: Generate embeddings in batches
+        batch_size = self.config.get('embedding_batch_size', 50)
+        embeddings = []
+        
+        for i in range(0, len(captions), batch_size):
+            batch_captions = captions[i:i + batch_size]
             
-            captions = []
-            product_indices = []
+            # Generate embeddings for batch
+            batch_embeddings = self.model.encode(batch_captions)
+            embeddings.extend(batch_embeddings)
             
-            for idx, row in wear_products.iterrows():
-                caption = row.get('final_caption', '') or row.get('title', '')
-                if caption.strip():
-                    captions.append(caption)
-                    product_indices.append(idx)
-            
-            if not captions:
-                logger.warning(f"No valid captions found for wear_type: {wear_type}")
-                continue
+            logger.info(f"📦 Processed batch {i//batch_size + 1}/{(len(captions) + batch_size - 1)//batch_size} for {wear_type}")
 
-            logger.info(f"Generating embeddings for {len(captions)} {wear_type} products...")
+        embeddings = np.array(embeddings)
 
-            embeddings = []
-            for caption in captions:
-                embedding = self.get_embedding_cached(caption)
-                embeddings.append(embedding)
-            embeddings = np.array(embeddings)
+        # Build FAISS index
+        dimension = embeddings.shape[1]
+        index = faiss.IndexFlatIP(dimension)
 
-            # Build FAISS index
-            dimension = embeddings.shape[1]
-            index = faiss.IndexFlatIP(dimension)
+        # Normalize embeddings for cosine similarity
+        embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
+        index.add(embeddings.astype('float32'))
 
-            # Normalize embeddings for cosine similarity
-            embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
-            index.add(embeddings.astype('float32'))
+        # Store index and mapping
+        self.faiss_indexes[wear_type] = index
+        self.product_mappings[wear_type] = {
+            'indices': product_indices, 
+            'products': wear_products.iloc[[wear_products.index.get_loc(idx) for idx in product_indices]].copy()
+        }
 
-            # Store index and mapping
-            self.faiss_indexes[wear_type] = index
-            self.product_mappings[wear_type] = {
-                'indices': product_indices, 
-                'products': wear_products.iloc[[wear_products.index.get_loc(idx) for idx in product_indices]].copy()
-            }
-
-            logger.info(f"Built FAISS index for {wear_type}: {len(captions)} products indexed")
+        logger.info(f"✅ Built FAISS index for {wear_type}: {len(captions)} products indexed")
+        
+        # Log cache statistics
+        cache_stats = self.get_cache_stats()
+        logger.info(f"📊 Embedding cache stats: {cache_stats['hit_rate']} hit rate ({cache_stats['hits']} hits, {cache_stats['misses']} misses)")
 
     def filter_products_enhanced(self, products_df: pd.DataFrame, user: Dict, wear_type: str = None) -> pd.DataFrame:
         """✅ ENHANCED: Enhanced manual filtering on Gender, Fashion Style, and Body Shape."""
@@ -720,37 +820,37 @@ class SupabaseMainOutfitsGenerator:
 
         def match(row):
             # 1. GENDER FILTERING (Strict for specific genders, flexible for Unisex)
-            user_gender = user.get('Gender', user.get('gender', ''))
-            product_gender = row.get('gender', 'Unisex')
+            user_gender = user.get('Gender', user.get('gender', '')).lower()
+            product_gender = row.get('gender', 'Unisex').lower()
 
             if user_gender and product_gender:
-                if user_gender in ['Male', 'Men']:
+                if user_gender in ['male', 'men']:
                     # For male users, prioritize men's clothing but allow some unisex
-                    acceptable_genders = ['Men', 'Male']
+                    acceptable_genders = ['men', 'male']
                     # Only allow Unisex if it's truly gender-neutral (not women's clothing)
-                    if product_gender == 'Unisex':
+                    if product_gender == 'unisex':
                         category = row.get('category', '').lower()
                         # Exclude clearly women's categories even if marked as Unisex
                         women_indicators = ['women', 'female', 'ladies', 'girl', 'dress', 'skirt', 'blouse']
                         if any(indicator in category for indicator in women_indicators):
                             return False
-                        acceptable_genders.append('Unisex')
-                elif user_gender in ['Female', 'Women']:
+                        acceptable_genders.append('unisex')
+                elif user_gender in ['female', 'women']:
                     # For female users, prioritize women's clothing but allow some unisex
-                    acceptable_genders = ['Women', 'Female']
+                    acceptable_genders = ['women', 'female']
                     # Only allow Unisex if it's truly gender-neutral (not men's clothing)
-                    if product_gender == 'Unisex':
+                    if product_gender == 'unisex':
                         category = row.get('category', '').lower()
                         # Exclude clearly men's categories even if marked as Unisex
                         men_indicators = ['men', 'male', 'boy', 'gentleman']
                         if any(indicator in category for indicator in men_indicators):
                             return False
-                        acceptable_genders.append('Unisex')
-                elif user_gender in ['Unisex']:
+                        acceptable_genders.append('unisex')
+                elif user_gender in ['unisex']:
                     # For Unisex users, accept all genders
-                    acceptable_genders = ['Men', 'Male', 'Women', 'Female', 'Unisex']
+                    acceptable_genders = ['men', 'male', 'women', 'female', 'unisex']
                 else:
-                    acceptable_genders = [user_gender, 'Unisex']
+                    acceptable_genders = [user_gender, 'unisex']
 
                 if product_gender not in acceptable_genders:
                     return False
@@ -759,39 +859,105 @@ class SupabaseMainOutfitsGenerator:
             user_style = user.get('Fashion Style', '').strip()
             product_style = row.get('enhanced_primary_style', row.get('primary_style', '')).strip()
 
+            # --- Style Matching Logic ---
+            # Supports user_style as JSON array or plain string
+            # Matches if ANY user style (case-insensitive, partial match) is present in product_style
             if user_style and product_style:
-                style_compatibility = {
-                    'Streetwear': ['Streetwear', 'Casual', 'Contemporary', 'Activewear', 'Athleisure'],
-                    'Athleisure': ['Athleisure', 'Activewear', 'Streetwear', 'Casual', 'Contemporary'],
-                    'Contemporary': ['Contemporary', 'Business Casual', 'Smart Casual', 'Casual'],
-                    'Business': ['Business', 'Business Formal', 'Business Casual', 'Professional'],
-                    'Formal': ['Formal', 'Business Formal', 'Evening Formal', 'Ultra Formal']
-                }
-
-                compatible_styles = style_compatibility.get(user_style, [user_style])
-                style_match = any(compatible_style.lower() in product_style.lower() for compatible_style in compatible_styles)
-
+                import json
+                style_match = False
+                user_styles = []
+                # Try to parse user_style as JSON array
+                if user_style.startswith('[') and user_style.endswith(']'):
+                    try:
+                        user_styles = json.loads(user_style)
+                        if not isinstance(user_styles, list):
+                            user_styles = [str(user_styles)]
+                    except Exception:
+                        user_styles = [user_style]
+                else:
+                    user_styles = [user_style]
+                # For each user style, check if it appears in product_style (case-insensitive, partial match)
+                for style in user_styles:
+                    if not isinstance(style, str):
+                        continue
+                    if style.strip().lower() in product_style.lower():
+                        style_match = True
+                        break
+                # If no direct match, try partial/word match
+                if not style_match:
+                    for style in user_styles:
+                        if not isinstance(style, str):
+                            continue
+                        style_words = style.strip().lower().split()
+                        for word in style_words:
+                            if word and word in product_style.lower():
+                                style_match = True
+                                break
+                        if style_match:
+                            break
+                # If still no match, fail the filter
                 if not style_match:
                     return False
+            # --- End Style Matching Logic ---
 
-            # 3. WEAR TYPE FILTERING (if specified)
-            if wear_type:
-                if row.get('wear_type', '') != wear_type:
+            # 3. WEAR TYPE FILTERING (Enhanced - based on apparel preferences)
+            user_gender = user.get('Gender', user.get('gender', '')).lower()
+            user_style = user.get('Fashion Style', '').strip()
+            import json
+            if user_style and user_style.startswith('[') and user_style.endswith(']'):
+                try:
+                    selected_styles = json.loads(user_style)
+                    if not isinstance(selected_styles, list):
+                        selected_styles = [str(selected_styles)]
+                except Exception:
+                    selected_styles = [user_style]
+            else:
+                selected_styles = [user_style] if user_style else []
+
+            # Map style names to preference columns
+            style_to_pref_map = {
+                'business casual': 'Apparel Pref Business Casual',
+                'streetwear': 'Apparel Pref Streetwear',
+                'athleisure': 'Apparel Pref Athleisure'
+            }
+
+            # Collect all product types from all selected styles
+            allowed_product_types = set()
+            for style in selected_styles:
+                if isinstance(style, str):
+                    style_lower = style.strip().lower()
+                    pref_key = style_to_pref_map.get(style_lower)
+                    if pref_key:
+                        pref_value = user.get(pref_key, '').strip()
+                        if pref_value:
+                            # Try to parse as JSON array
+                            try:
+                                pref_list = json.loads(pref_value)
+                                if isinstance(pref_list, list):
+                                    for pt in pref_list:
+                                        if isinstance(pt, str) and pt.strip():
+                                            allowed_product_types.add(pt.strip().lower())
+                                else:
+                                    if isinstance(pref_list, str) and pref_list.strip():
+                                        allowed_product_types.add(pref_list.strip().lower())
+                            except Exception:
+                                # If not JSON, treat as single string
+                                allowed_product_types.add(pref_value.lower())
+
+            # If no apparel preferences found, use fallback based on gender
+            if not allowed_product_types:
+                if user_gender in ['male', 'men']:
+                    allowed_product_types = {'tshirt', 'jeans', 'cargo'}
+                elif user_gender in ['female', 'women']:
+                    allowed_product_types = {'dress'}
+                else:
+                    allowed_product_types = {'tshirt', 'jeans'}
+
+            # Check if product matches any of the allowed product types (exact match, case-insensitive)
+            if allowed_product_types:
+                product_type = str(row.get('product_type', '')).strip().lower()
+                if product_type not in allowed_product_types:
                     return False
-                
-                # WINTER UPPERWEAR FILTERING (for upperwear only)
-                if wear_type == 'Upperwear':
-                    title = row.get('title', '').lower()
-                    style = row.get('enhanced_primary_style', row.get('primary_style', '')).lower()
-                    
-                    winter_keywords = [
-                        'jacket', 'sweater', 'hoodie', 'sweatshirt',
-                        'jumper', 'fleece', 'thermal', 'winter',
-                        'wool', 'knit', 'quilted', 'padded', 'insulated'
-                    ]
-                    
-                    if any(keyword in title or keyword in style for keyword in winter_keywords):
-                        return False
 
             return True
 
@@ -837,14 +1003,15 @@ class SupabaseMainOutfitsGenerator:
 
             # Apply gender filter if specified
             if gender_filter and gender_filter != 'Unisex':
-                product_gender = product.get('gender', 'Unisex')
+                product_gender = product.get('gender', 'Unisex').lower()
+                gender_filter_lower = gender_filter.lower()
 
-                if gender_filter in ['Male', 'Men']:
-                    acceptable_genders = ['Men', 'Male', 'Unisex']
-                elif gender_filter in ['Female', 'Women']:
-                    acceptable_genders = ['Women', 'Female', 'Unisex']
+                if gender_filter_lower in ['male', 'men']:
+                    acceptable_genders = ['men', 'male', 'unisex']
+                elif gender_filter_lower in ['female', 'women']:
+                    acceptable_genders = ['women', 'female', 'unisex']
                 else:
-                    acceptable_genders = [gender_filter, 'Unisex']
+                    acceptable_genders = [gender_filter_lower, 'unisex']
 
                 if product_gender not in acceptable_genders:
                     continue
@@ -1327,7 +1494,7 @@ class SupabaseMainOutfitsGenerator:
         return min(base_score, 1.0)
 
     def generate_main_outfits_for_user(self, user_id: int) -> List[Dict]:
-        """✅ ENHANCED: Generate 50 main outfits for a user using enhanced Supabase data."""
+        """✅ ENHANCED: Generate 20 main outfits for a user using enhanced Supabase data."""
         try:
             logger.info(f"🎯 Generating enhanced main outfits for user {user_id} using Supabase...")
             
@@ -1338,17 +1505,18 @@ class SupabaseMainOutfitsGenerator:
             self.validate_user_data(user)
             
             # Load and validate products
-            products_df = self.load_products_data_enhanced()
+            products_df = self.load_products_data_enhanced(user_data=user)
             
             if products_df.empty:
                 logger.error("❌ No products data available")
                 return []
 
-            # Enhanced filtering
-            filtered_products_df = self.filter_products_enhanced(products_df, user)
+            # ✅ ENHANCED: Products are already pre-filtered at database level
+            # No need for additional filtering since we're using user-specific database queries
+            filtered_products_df = products_df
             
             if filtered_products_df.empty:
-                logger.warning("❌ No products remain after filtering")
+                logger.warning("❌ No products remain after pre-filtering")
                 return []
 
             # Build FAISS indexes
@@ -1370,20 +1538,30 @@ class SupabaseMainOutfitsGenerator:
             logger.info(f"Getting recommendations for User {user_id}")
 
             # Get semantic recommendations
-            upperwear_recs = self.get_semantic_recommendations(
-                upperwear_profile,
-                'Upperwear',
-                user_gender,
-                k=self.config['tops_per_outfit'],
-                user=user
-            )
-            bottomwear_recs = self.get_semantic_recommendations(
-                bottomwear_profile,
-                'Bottomwear',
-                user_gender,
-                k=self.config['bottoms_per_outfit'],
-                user=user
-            )
+            logger.info("🚀 Getting semantic recommendations with parallel processing...")
+            
+            # 🚀 PARALLEL: Get recommendations for tops and bottoms simultaneously
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                upperwear_future = executor.submit(
+                    self.get_semantic_recommendations,
+                    upperwear_profile,
+                    'Upperwear',
+                    user_gender,
+                    k=self.config['tops_per_outfit'],
+                    user=user
+                )
+                bottomwear_future = executor.submit(
+                    self.get_semantic_recommendations,
+                    bottomwear_profile,
+                    'Bottomwear',
+                    user_gender,
+                    k=self.config['bottoms_per_outfit'],
+                    user=user
+                )
+                
+                # Wait for both to complete
+                upperwear_recs = upperwear_future.result()
+                bottomwear_recs = bottomwear_future.result()
 
             if not upperwear_recs or not bottomwear_recs:
                 logger.warning("Insufficient products for outfit generation")
@@ -1393,6 +1571,7 @@ class SupabaseMainOutfitsGenerator:
             recommendations = []
             outfit_count = 0
             target_outfits = self.config['main_outfits_count']
+            seen_combinations = set()  # Track seen top_id + bottom_id combinations
 
             for i, top_rec in enumerate(upperwear_recs):
                 for j, bottom_rec in enumerate(bottomwear_recs):
@@ -1402,10 +1581,110 @@ class SupabaseMainOutfitsGenerator:
                     top = top_rec['product']
                     bottom = bottom_rec['product']
 
+                    # Create unique combination key
+                    top_id = str(top.get('product_id', top.get('id', '')))
+                    bottom_id = str(bottom.get('product_id', bottom.get('id', '')))
+                    combination_key = f"{top_id}_{bottom_id}"
+                    
+                    # Skip if this combination already exists
+                    if combination_key in seen_combinations:
+                        continue
+                    
+                    # Add to seen combinations
+                    seen_combinations.add(combination_key)
+
                     # Enhanced outfit scoring
                     outfit_score, explanation = self.score_outfit_enhanced(
                         top, bottom, user, top_rec['semantic_score'], bottom_rec['semantic_score']
                     )
+
+                    # 🎨 Generate outfit name and description
+                    outfit_data = {
+                        'top': {
+                            **top.to_dict(),
+                            # Add specific fields for unique name/description generation
+                            'title': top.get('title', ''),
+                            'primary_style': top.get('primary_style', ''),
+                            'dominant_color': top.get('primary_color', ''),
+                            'styleTags': top.get('styleTags', ''),
+                            'personaTag': top.get('personaTag', ''),
+                            'full_caption': top.get('full_caption', ''),
+                            'occasion': top.get('occasion', ''),
+                            'category': top.get('category', ''),
+                            'wear_type': top.get('wear_type', ''),
+                            'price': top.get('price', 0),
+                            'image_url': top.get('image_url', ''),
+                            'product_id': top.get('product_id', top.get('id', ''))
+                        },
+                        'bottom': {
+                            **bottom.to_dict(),
+                            # Add specific fields for unique name/description generation
+                            'title': bottom.get('title', ''),
+                            'primary_style': bottom.get('primary_style', ''),
+                            'dominant_color': bottom.get('primary_color', ''),
+                            'styleTags': bottom.get('styleTags', ''),
+                            'personaTag': bottom.get('personaTag', ''),
+                            'full_caption': bottom.get('full_caption', ''),
+                            'occasion': bottom.get('occasion', ''),
+                            'category': bottom.get('category', ''),
+                            'wear_type': bottom.get('wear_type', ''),
+                            'price': bottom.get('price', 0),
+                            'image_url': bottom.get('image_url', ''),
+                            'product_id': bottom.get('product_id', bottom.get('id', ''))
+                        }
+                    }
+                    outfit_name, outfit_description = self.generate_outfit_name_and_description(outfit_data, user)
+
+                    # 🎯 NEW: Generate "Why was this picked for you" explanation
+                    why_picked_explanation = None
+                    if self.why_picked_feature:
+                        try:
+                            logger.info(f"[DEBUG] WhyPickedFeature is available, generating explanation...")
+                            # Prepare outfit data for why picked feature
+                            outfit_for_why_picked = {
+                                # Top product data
+                                'top_title': top.get('title', ''),
+                                'top_primary_style': top.get('primary_style', ''),
+                                'top_style_tags': top.get('styleTags', ''),
+                                'top_persona_tag': top.get('personaTag', ''),
+                                'top_full_caption': top.get('full_caption', ''),
+                                'top_color': top.get('primary_color', ''),
+                                'top_price': top.get('price', 0),
+                                'top_category': top.get('category', ''),
+                                'top_scraped_category': top.get('scraped_category', ''),
+                                'top_brand': top.get('brand', ''),
+                                'top_material': top.get('material', ''),
+                                'top_fit': top.get('fit', ''),
+                                
+                                # Bottom product data
+                                'bottom_title': bottom.get('title', ''),
+                                'bottom_primary_style': bottom.get('primary_style', ''),
+                                'bottom_style_tags': bottom.get('styleTags', ''),
+                                'bottom_persona_tag': bottom.get('personaTag', ''),
+                                'bottom_full_caption': bottom.get('full_caption', ''),
+                                'bottom_color': bottom.get('primary_color', ''),
+                                'bottom_price': bottom.get('price', 0),
+                                'bottom_category': bottom.get('category', ''),
+                                'bottom_scraped_category': bottom.get('scraped_category', ''),
+                                'bottom_brand': bottom.get('brand', ''),
+                                'bottom_material': bottom.get('material', ''),
+                                'bottom_fit': bottom.get('fit', ''),
+                                
+                                # User data
+                                'user_body_shape': user.get('Body Shape', ''),
+                                'user_undertone': user.get('Undertone', ''),
+                            }
+                            
+                            logger.info(f"[DEBUG] Outfit data for why picked: {outfit_for_why_picked}")
+                            logger.info(f"[DEBUG] User data for why picked: {user}")
+                            
+                            why_picked_explanation = self.why_picked_feature.generate_why_picked_explanation(outfit_for_why_picked, user)
+                            logger.info(f"[DEBUG] Successfully generated why picked explanation: {why_picked_explanation}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Failed to generate why picked explanation: {e}")
+                            why_picked_explanation = None
+                    else:
+                        logger.warning("⚠️ WhyPickedFeature not available - 'Why was this picked for you' feature will be disabled")
 
                     recommendations.append({
                         'main_outfit_id': f"main_{user_id}_{outfit_count + 1}",
@@ -1413,9 +1692,14 @@ class SupabaseMainOutfitsGenerator:
                         'rank': outfit_count + 1,
                         'score': outfit_score,
                         'explanation': explanation,
+                        'outfit_name': outfit_name,  # 🎨 NEW: Outfit name
+                        'outfit_description': outfit_description,  # 🎨 NEW: Outfit description
+                        
+                        # 🎯 NEW: Why was this picked for you (single JSON column)
+                        'why_picked_explanation': why_picked_explanation,
 
                         # Top product details (matching database schema)
-                        'top_id': str(top.get('product_id', top.get('id', ''))),
+                        'top_id': top_id,
                         'top_title': top.get('title', ''),
                         'top_image': top.get('image_url', ''),
                         'top_price': float(top.get('price', 0)),
@@ -1424,7 +1708,7 @@ class SupabaseMainOutfitsGenerator:
                         'top_semantic_score': top_rec['semantic_score'],
 
                         # Bottom product details (matching database schema)
-                        'bottom_id': str(bottom.get('product_id', bottom.get('id', ''))),
+                        'bottom_id': bottom_id,
                         'bottom_title': bottom.get('title', ''),
                         'bottom_image': bottom.get('image_url', ''),
                         'bottom_price': float(bottom.get('price', 0)),
@@ -1460,6 +1744,15 @@ class SupabaseMainOutfitsGenerator:
                 recommendations = []
 
             logger.info(f"Generated {len(recommendations)} enhanced outfit recommendations for user {user_id}")
+            
+            # 🚀 PERFORMANCE SUMMARY
+            cache_stats = self.get_cache_stats()
+            logger.info(f"🚀 PERFORMANCE SUMMARY:")
+            logger.info(f"   📊 Products loaded: {len(filtered_products_df)} (pre-filtered)")
+            logger.info(f"   🧠 Embedding cache: {cache_stats['hit_rate']} hit rate")
+            logger.info(f"   📦 Cache stats: {cache_stats['hits']} hits, {cache_stats['misses']} misses")
+            logger.info(f"   🎯 Outfits generated: {len(recommendations)}")
+            
             return recommendations
 
         except Exception as e:
@@ -1491,35 +1784,45 @@ class SupabaseMainOutfitsGenerator:
             # Prepare outfits with guaranteed unique IDs
             processed_outfits = []
             for i, outfit in enumerate(outfits_data):
-                # Create ultra-unique ID with multiple entropy sources
-                attempts = 0
-                max_attempts = 5
-                unique_id = None
+                # Preserve the original main_outfit_id from generation
+                original_id = outfit.get('main_outfit_id', f"main_{user_id}_{i+1}")
                 
-                while attempts < max_attempts:
-                    current_time = int(time.time() * 1000000) + attempts  # Add attempt number for uniqueness
-                    unique_suffix = f"{current_time}_{random.randint(10000, 99999)}_{uuid.uuid4().hex[:8]}"
-                    candidate_id = f"main_{user_id}_{i+1}_{unique_suffix}"
+                # Check if the original ID is unique
+                if self._verify_unique_outfit_id(original_id):
+                    # Use the original ID if it's unique
+                    unique_id = original_id
+                else:
+                    # Generate a new unique ID only if there's a conflict
+                    attempts = 0
+                    max_attempts = 5
+                    unique_id = None
                     
-                    # Ensure ID is under database limit (100 chars)
-                    if len(candidate_id) > 100:
-                        candidate_id = f"main_{user_id}_{i+1}_{uuid.uuid4().hex[:12]}"
+                    while attempts < max_attempts:
+                        current_time = int(time.time() * 1000000) + attempts
+                        unique_suffix = f"{current_time}_{random.randint(10000, 99999)}_{uuid.uuid4().hex[:8]}"
+                        candidate_id = f"main_{user_id}_{i+1}_{unique_suffix}"
+                        
+                        # Ensure ID is under database limit (100 chars)
+                        if len(candidate_id) > 100:
+                            candidate_id = f"main_{user_id}_{i+1}_{uuid.uuid4().hex[:12]}"
+                        
+                        # Verify this ID doesn't exist
+                        if self._verify_unique_outfit_id(candidate_id):
+                            unique_id = candidate_id
+                            break
+                        
+                        attempts += 1
+                        time.sleep(0.01)
                     
-                    # Verify this ID doesn't exist
-                    if self._verify_unique_outfit_id(candidate_id):
-                        unique_id = candidate_id
-                        break
-                    
-                    attempts += 1
-                    time.sleep(0.01)  # Small delay before retry
-                
-                if unique_id is None:
-                    # Fallback: use pure UUID if all attempts failed
-                    unique_id = f"main_{user_id}_{uuid.uuid4().hex}"
-                    logger.warning(f"Using fallback UUID for outfit {i+1}: {unique_id}")
+                    if unique_id is None:
+                        # Fallback: use pure UUID if all attempts failed
+                        unique_id = f"main_{user_id}_{i+1}_{uuid.uuid4().hex[:12]}"
+                        logger.warning(f"Using fallback UUID for outfit {i+1}: {unique_id}")
                 
                 outfit_copy = outfit.copy()
                 outfit_copy['main_outfit_id'] = unique_id
+                # Ensure rank starts from 1 and is sequential
+                outfit_copy['rank'] = i + 1
                 processed_outfits.append(outfit_copy)
                 
                 # Small delay to ensure timestamp uniqueness
@@ -2083,7 +2386,7 @@ class SupabaseMainOutfitsGenerator:
     def diversify_outfit_recommendations(
             self,
             recommendations: list,
-            top_n: int = 50) -> list:
+            top_n: int = 20) -> list:
         """Diversify outfit recommendations to ensure variety in styles and colors."""
         if not recommendations:
             return []
@@ -2235,16 +2538,24 @@ class SupabaseMainOutfitsGenerator:
         return 0.0
 
     def _create_outfit_hash(self, top: Dict, bottom: Dict) -> tuple:
-        """Create a hash tuple for an outfit based on multiple attributes."""
+        """Create a hash tuple for an outfit based on product IDs to detect duplicates."""
+        # Primary key: product IDs (most important for duplicate detection)
+        top_id = str(top.get('product_id', top.get('id', '')))
+        bottom_id = str(bottom.get('product_id', bottom.get('id', '')))
+        
+        # Secondary attributes for additional uniqueness
+        top_style = str(top.get('style', '')).lower()
+        bottom_style = str(bottom.get('style', '')).lower()
+        top_color = str(top.get('color', '')).lower()
+        bottom_color = str(bottom.get('color', '')).lower()
+        
         return (
-            top.get('product_id', ''),
-            bottom.get('product_id', ''),
-            top.get('style', ''),
-            bottom.get('style', ''),
-            top.get('color', ''),
-            bottom.get('color', ''),
-            top.get('title', ''),
-            bottom.get('title', '')
+            top_id,
+            bottom_id,
+            top_style,
+            bottom_style,
+            top_color,
+            bottom_color
         )
 
     def calculate_color_harmony_score(self, color1: str, color2: str) -> float:
@@ -2293,6 +2604,294 @@ class SupabaseMainOutfitsGenerator:
         score1 = get_professional_harmony_score(color1, color2)
         score2 = get_professional_harmony_score(color2, color1)
         return max(score1, score2)
+
+    def generate_outfit_name_and_description(self, outfit_data: Dict, user_data: Dict = None) -> Tuple[str, str]:
+        """
+        Generate outfit name and description using fashion intelligence.
+        
+        Args:
+            outfit_data: Dictionary containing top and bottom product data
+            user_data: User data for personalization
+            
+        Returns:
+            Tuple[str, str]: (outfit_name, outfit_description)
+        """
+        try:
+            # Extract outfit components
+            top_data = outfit_data.get('top', {})
+            bottom_data = outfit_data.get('bottom', {})
+            
+            # Word banks for outfit naming
+            MOOD_WORDS = [
+                "Urban", "Luxe", "Coastal", "Athleisure", "Retro", "Boho",
+                "Minimal", "Neo-Noir", "Heritage", "Streetline", "Artsy",
+                "Safari", "Midnight", "Electric", "Pastel", "Monochrome",
+                "Vintage", "Modern", "Classic", "Edgy", "Sophisticated",
+                "Casual", "Elegant", "Bold", "Subtle", "Dynamic"
+            ]
+            
+            ACCENT_WORDS = [
+                "Sage", "Scarlet", "Indigo", "Denim", "Linen", "Houndstooth",
+                "Tweed", "Velvet", "Floral", "Graphic", "Gingham", "Leather",
+                "Navy", "Coral", "Olive", "Cream", "Charcoal", "Burgundy",
+                "Camel", "Emerald", "Rose", "Slate", "Amber", "Teal"
+            ]
+            
+            NOUN_WORDS = [
+                "Shift", "Edit", "Ensemble", "Layer", "Remix", "Story",
+                "Set", "Collective", "Combo", "Twist", "Look", "Style",
+                "Vibe", "Mood", "Statement", "Signature", "Essence"
+            ]
+            
+            OCCASION_WORDS = [
+                "Brunch", "Boardroom", "Festival", "Weekend", "Soirée",
+                "Runway", "Getaway", "Studio", "Commute", "Date Night",
+                "Office", "Dinner", "Party", "Travel", "Meeting", "Lunch"
+            ]
+            
+            # Analyze outfit components to determine mood
+            mood = self._determine_outfit_mood(top_data, bottom_data, user_data, MOOD_WORDS)
+            
+            # Determine accent (color/fabric/print)
+            accent = self._determine_outfit_accent(top_data, bottom_data, ACCENT_WORDS)
+            
+            # Select noun anchor
+            noun = random.choice(NOUN_WORDS)
+            
+            # Determine occasion/context
+            occasion = self._determine_outfit_occasion(top_data, bottom_data, user_data, OCCASION_WORDS)
+            
+            # Build outfit name (max 3 words)
+            outfit_name = self._build_outfit_name(mood, accent, noun, occasion)
+            
+            # Generate short description
+            outfit_description = self._generate_outfit_description(outfit_data, outfit_name, user_data)
+            
+            return outfit_name, outfit_description
+            
+        except Exception as e:
+            logger.error(f"❌ Error generating outfit name/description: {e}")
+            return "Classic Edit", "A timeless combination perfect for any occasion."
+    
+    def _determine_outfit_mood(self, top_data: Dict, bottom_data: Dict, user_data: Dict, mood_words: List[str]) -> str:
+        """Determine the overall mood/vibe of the outfit."""
+        try:
+            # Extract style information
+            top_style = top_data.get('primary_style', '').lower()
+            bottom_style = bottom_data.get('primary_style', '').lower()
+            top_title = top_data.get('title', '').lower()
+            bottom_title = bottom_data.get('title', '').lower()
+            
+            # Style-based mood mapping
+            style_mood_map = {
+                'streetwear': ['Urban', 'Streetline', 'Edgy', 'Bold'],
+                'business casual': ['Sophisticated', 'Classic', 'Heritage', 'Minimal'],
+                'athleisure': ['Athleisure', 'Dynamic', 'Modern', 'Casual'],
+                'casual': ['Casual', 'Coastal', 'Relaxed', 'Minimal'],
+                'formal': ['Luxe', 'Elegant', 'Sophisticated', 'Classic'],
+                'vintage': ['Vintage', 'Retro', 'Heritage', 'Classic'],
+                'bohemian': ['Boho', 'Artsy', 'Coastal', 'Relaxed'],
+                'minimalist': ['Minimal', 'Subtle', 'Clean', 'Modern']
+            }
+            
+            # Determine mood from styles
+            possible_moods = []
+            for style, moods in style_mood_map.items():
+                if style in top_style or style in bottom_style:
+                    possible_moods.extend(moods)
+            
+            # Add user personality influence
+            if user_data:
+                personality = user_data.get('Personality Tag 1', '').lower()
+                if 'minimalistic' in personality:
+                    possible_moods.extend(['Minimal', 'Subtle', 'Clean'])
+                elif 'adventurous' in personality:
+                    possible_moods.extend(['Bold', 'Dynamic', 'Edgy'])
+                elif 'elegant' in personality:
+                    possible_moods.extend(['Luxe', 'Elegant', 'Sophisticated'])
+            
+            # Filter to available mood words and select
+            available_moods = [m for m in possible_moods if m in mood_words]
+            if available_moods:
+                return random.choice(available_moods)
+            
+            # Fallback to common moods
+            fallback_moods = ['Urban', 'Classic', 'Modern', 'Casual']
+            return random.choice([m for m in fallback_moods if m in mood_words])
+            
+        except Exception as e:
+            logger.error(f"❌ Error determining outfit mood: {e}")
+            return "Classic"
+    
+    def _determine_outfit_accent(self, top_data: Dict, bottom_data: Dict, accent_words: List[str]) -> str:
+        """Determine accent color/fabric/print for the outfit."""
+        try:
+            # Extract color information
+            top_color = top_data.get('dominant_color', '').lower()
+            bottom_color = bottom_data.get('dominant_color', '').lower()
+            
+            # Color to accent word mapping
+            color_accent_map = {
+                'black': ['Charcoal', 'Midnight', 'Neo-Noir'],
+                'white': ['Cream', 'Monochrome'],
+                'blue': ['Indigo', 'Navy', 'Sage'],
+                'red': ['Scarlet', 'Coral', 'Rose'],
+                'green': ['Sage', 'Olive', 'Emerald'],
+                'brown': ['Camel', 'Leather', 'Tweed'],
+                'gray': ['Slate', 'Charcoal', 'Monochrome'],
+                'pink': ['Rose', 'Coral', 'Pastel'],
+                'yellow': ['Amber', 'Pastel'],
+                'purple': ['Burgundy', 'Indigo'],
+                'orange': ['Amber', 'Coral'],
+                'teal': ['Teal', 'Emerald']
+            }
+            
+            # Check for fabric/print patterns
+            top_title = top_data.get('title', '').lower()
+            bottom_title = bottom_data.get('title', '').lower()
+            
+            fabric_accent_map = {
+                'denim': ['Denim'],
+                'linen': ['Linen'],
+                'leather': ['Leather'],
+                'velvet': ['Velvet'],
+                'tweed': ['Tweed'],
+                'floral': ['Floral'],
+                'graphic': ['Graphic'],
+                'gingham': ['Gingham'],
+                'houndstooth': ['Houndstooth']
+            }
+            
+            # Check for fabrics/prints first
+            for fabric, accents in fabric_accent_map.items():
+                if fabric in top_title or fabric in bottom_title:
+                    available_accents = [a for a in accents if a in accent_words]
+                    if available_accents:
+                        return random.choice(available_accents)
+            
+            # Check for colors
+            for color, accents in color_accent_map.items():
+                if color in top_color or color in bottom_color:
+                    available_accents = [a for a in accents if a in accent_words]
+                    if available_accents:
+                        return random.choice(available_accents)
+            
+            # Fallback to neutral accents
+            fallback_accents = ['Cream', 'Charcoal', 'Monochrome']
+            return random.choice([a for a in fallback_accents if a in accent_words])
+            
+        except Exception as e:
+            logger.error(f"❌ Error determining outfit accent: {e}")
+            return "Cream"
+    
+    def _determine_outfit_occasion(self, top_data: Dict, bottom_data: Dict, user_data: Dict, occasion_words: List[str]) -> str:
+        """Determine the occasion/context for the outfit."""
+        try:
+            # Extract style and formality information
+            top_style = top_data.get('primary_style', '').lower()
+            bottom_style = bottom_data.get('primary_style', '').lower()
+            
+            # Style to occasion mapping
+            style_occasion_map = {
+                'business casual': ['Boardroom', 'Office', 'Meeting'],
+                'formal': ['Soirée', 'Dinner', 'Party'],
+                'casual': ['Weekend', 'Brunch', 'Commute'],
+                'streetwear': ['Street', 'Weekend', 'Commute'],
+                'athleisure': ['Studio', 'Weekend', 'Commute'],
+                'party': ['Party', 'Soirée', 'Date Night'],
+                'travel': ['Travel', 'Getaway', 'Commute']
+            }
+            
+            # Determine occasion from styles
+            possible_occasions = []
+            for style, occasions in style_occasion_map.items():
+                if style in top_style or style in bottom_style:
+                    possible_occasions.extend(occasions)
+            
+            # Add user context
+            if user_data:
+                workspace_style = user_data.get('Workspace Style', '').lower()
+                if 'formal' in workspace_style:
+                    possible_occasions.extend(['Boardroom', 'Office'])
+                elif 'casual' in workspace_style:
+                    possible_occasions.extend(['Office', 'Meeting'])
+            
+            # Filter to available occasion words and select
+            available_occasions = [o for o in possible_occasions if o in occasion_words]
+            if available_occasions:
+                return random.choice(available_occasions)
+            
+            # Fallback to common occasions
+            fallback_occasions = ['Weekend', 'Office', 'Commute']
+            return random.choice([o for o in fallback_occasions if o in occasion_words])
+            
+        except Exception as e:
+            logger.error(f"❌ Error determining outfit occasion: {e}")
+            return "Weekend"
+    
+    def _build_outfit_name(self, mood: str, accent: str, noun: str, occasion: str) -> str:
+        """Build outfit name with max 3 words."""
+        try:
+            # Different name patterns (max 3 words)
+            patterns = [
+                f"{mood} {noun}",  # Urban Shift
+                f"{accent} {noun}",  # Scarlet Edit
+                f"{mood} {occasion}",  # Urban Weekend
+                f"{accent} {mood} {noun}",  # Scarlet Urban Edit
+                f"{mood} {noun} {occasion}"  # Urban Shift Weekend
+            ]
+            
+            # Select a pattern that fits 3-word limit
+            valid_patterns = [p for p in patterns if len(p.split()) <= 3]
+            
+            if valid_patterns:
+                outfit_name = random.choice(valid_patterns)
+                return outfit_name.upper()  # Convert to uppercase
+            else:
+                # Fallback to simple 2-word pattern
+                outfit_name = f"{mood} {noun}"
+                return outfit_name.upper()  # Convert to uppercase
+                
+        except Exception as e:
+            logger.error(f"❌ Error building outfit name: {e}")
+            outfit_name = f"{mood} {noun}"
+            return outfit_name.upper()  # Convert to uppercase
+    
+    def _generate_outfit_description(self, outfit_data: Dict, outfit_name: str, user_data: Dict = None) -> str:
+        """Generate a short, engaging outfit description."""
+        try:
+            top_data = outfit_data.get('top', {})
+            bottom_data = outfit_data.get('bottom', {})
+            
+            # Extract key details
+            top_style = top_data.get('primary_style', '')
+            bottom_style = bottom_data.get('primary_style', '')
+            top_color = top_data.get('dominant_color', '')
+            bottom_color = bottom_data.get('dominant_color', '')
+            
+            # Description templates
+            templates = [
+                f"A {outfit_name.lower()} that combines {top_style} elegance with {bottom_style} comfort.",
+                f"This {outfit_name.lower()} brings together {top_color} and {bottom_color} for a balanced look.",
+                f"Perfect {outfit_name.lower()} featuring {top_style} sophistication and {bottom_style} style.",
+                f"A versatile {outfit_name.lower()} that works for both casual and elevated occasions.",
+                f"This {outfit_name.lower()} showcases the perfect blend of {top_style} and {bottom_style} aesthetics."
+            ]
+            
+            # Select and customize template
+            description = random.choice(templates)
+            
+            # Add personalization if user data available
+            if user_data:
+                personality = user_data.get('Personality Tag 1', '')
+                if personality:
+                    description += f" Ideal for {personality.lower()} individuals."
+            
+            return description
+            
+        except Exception as e:
+            logger.error(f"❌ Error generating outfit description: {e}")
+            return f"A stylish {outfit_name.lower()} perfect for any occasion."
 
 def main():
     """Main function to test the enhanced Supabase outfit generator."""

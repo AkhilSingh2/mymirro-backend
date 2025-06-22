@@ -203,6 +203,8 @@ outfit_model = api.model('Outfit', {
     'rank': fields.Integer(description='Outfit ranking', example=1),
     'score': fields.Float(description='Overall outfit score', example=0.87),
     'explanation': fields.String(description='Outfit explanation', example='Ethnic wear recommendation | Men Solid Casual Shirt | Matches your contemporary style preference'),
+    'outfit_name': fields.String(description='Generated outfit name', example='Urban Shift'),
+    'outfit_description': fields.String(description='Generated outfit description', example='A contemporary urban ensemble featuring a sleek black t-shirt paired with tailored trousers for a modern, versatile look'),
     'top': fields.Nested(product_model, description='Top product details'),
     'bottom': fields.Nested(product_model, description='Bottom product details'),
     'total_price': fields.Float(description='Combined price of outfit', example=2099.0),
@@ -212,9 +214,9 @@ outfit_model = api.model('Outfit', {
 
 outfit_generation_response_model = api.model('OutfitGenerationResponse', {
     'success': fields.Boolean(description='Generation success status'),
-    'message': fields.String(description='Response message', example='Successfully generated 50 outfits for user 2'),
+    'message': fields.String(description='Response message', example='Successfully generated 20 outfits for user 2'),
     'user_id': fields.Integer(description='User ID', example=2),
-    'outfits_count': fields.Integer(description='Number of outfits generated', example=50),
+    'outfits_count': fields.Integer(description='Number of outfits generated', example=20),
     'generation_time_seconds': fields.Float(description='Time taken to generate', example=12.5),
     'data_source': fields.String(description='Where data is stored', example='supabase')
 })
@@ -445,11 +447,13 @@ class OutfitGeneration(Resource):
             generation_time = time.time() - start_time
             
             if success:
+                # Get the actual number of outfits from the generator's config
+                outfits_count = generator.config.get('main_outfits_count', 20)
                 return {
                     'success': True,
-                    'message': f'Successfully generated 50 outfits for user {user_id}',
+                    'message': f'Successfully generated {outfits_count} outfits for user {user_id}',
                     'user_id': user_id,
-                    'outfits_count': 50,
+                    'outfits_count': outfits_count,
                     'generation_time_seconds': round(generation_time, 2),
                     'data_source': 'supabase'
                 }, 200
@@ -547,6 +551,8 @@ class UserOutfits(Resource):
                     'rank': outfit.get('rank', 0),
                     'score': outfit.get('score', 0.0),
                     'explanation': outfit.get('explanation', ''),
+                    'outfit_name': outfit.get('outfit_name', ''),
+                    'outfit_description': outfit.get('outfit_description', ''),
                     'top': {
                         'id': outfit.get('top_id', ''),
                         'title': outfit.get('top_title', ''),
@@ -699,6 +705,8 @@ class SimilarOutfits(Resource):
                         'rank': len(formatted_similar_outfits) + 1,
                         'score': similar_outfit['similarity_score'],
                         'explanation': f"Similar to {outfit_id} | {outfit_data.get('top_title', '')[:50]}... + {outfit_data.get('bottom_title', '')[:50]}...",
+                        'outfit_name': outfit_data.get('outfit_name', ''),
+                        'outfit_description': outfit_data.get('outfit_description', ''),
                         'top': {
                             'id': outfit_data.get('top_id', ''),
                             'title': outfit_data.get('top_title', ''),
