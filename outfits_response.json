@@ -1,0 +1,758 @@
+{
+    "success": true,
+    "user_id": 12,
+    "outfits": [
+        {
+            "main_outfit_id": "main_12_1_retry_1750692591409886_862c32b0",
+            "rank": 1,
+            "score": 0.696,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "MINIMAL WEEKEND",
+            "outfit_description": "Perfect minimal weekend featuring Casual sophistication and Casual style. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: versatile - Suitable for various occasions and settings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15760",
+                "title": "Men Slim Fit Casual Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/22468004/2023/3/23/532acb26-9b5f-449e-8ff2-db31f19d4d221679543943328CalvinKleinJeansMenGreySlimFitTrousers1.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "White",
+                "semantic_score": 0.681
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_2_retry_1750692591540444_9b599246",
+            "rank": 2,
+            "score": 0.683,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "CASUAL STORY",
+            "outfit_description": "Perfect casual story featuring Casual sophistication and Casual style. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15615",
+                "title": "Men Skinny Fit  Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/18951120/2022/7/4/412c4058-6329-4dfa-bc04-0a8552febe941656921735031BasicsMenGreySkinnyFitLow-RiseTrousers1.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "Black",
+                "semantic_score": 0.71
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_3_retry_1750692591677623_9aea3e89",
+            "rank": 3,
+            "score": 0.681,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "SAGE ESSENCE",
+            "outfit_description": "A sage essence that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: everyday - Great for daily wear and routine activities.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: universal blue - The blue tones are universally flattering.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15686",
+                "title": "Men Slim Cropped Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/24625262/2023/9/14/8127022f-75d2-4e55-be65-a1d45b4e15861694681675323-boohooMAN-Striped-Slim-Fit-Pleated-Cropped-Trousers-61816946-1.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "Beige",
+                "semantic_score": 0.668
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_4_retry_1750692591803053_5e8f2d1f",
+            "rank": 4,
+            "score": 0.0,
+            "explanation": "Incompatible: Color combination blue + cream may not be harmonious",
+            "outfit_name": "SAGE STATEMENT",
+            "outfit_description": "A sage statement that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: versatile - Suitable for various occasions and settings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: universal blue - The blue tones are universally flattering.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "4915",
+                "title": "Men Pleated Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2024/NOVEMBER/23/HAgXoRwZ_c8c430d984b340febe6d1fd6b5b080fe.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "Cream",
+                "semantic_score": 0.667
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_5_retry_1750692591949837_31518b4b",
+            "rank": 5,
+            "score": 0.0,
+            "explanation": "Incompatible: Color combination blue + unknown may not be harmonious",
+            "outfit_name": "NAVY COASTAL EDIT",
+            "outfit_description": "This navy coastal edit brings together Blue and Unknown for a balanced look. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: business casual - This outfit strikes the perfect balance between professional and comfortable.\n\nOccasion: everyday - Great for daily wear and routine activities.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: universal blue - The blue tones are universally flattering.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15717",
+                "title": "Auto Fit Waist Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/18430770/2022/6/8/663f8655-8abd-438c-9310-f3c4a62cdfd01654680951397-Dennison-Men-Light-Blue-Smart-Tapered-Fit-Cropped-Waist-Flex-1.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "Unknown",
+                "semantic_score": 0.666
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_6_retry_1750692592063626_8bfc133f",
+            "rank": 6,
+            "score": 0.696,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "MINIMAL WEEKEND",
+            "outfit_description": "Perfect minimal weekend featuring Casual sophistication and Casual style. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: versatile - Suitable for various occasions and settings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15760",
+                "title": "Men Slim Fit Casual Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/22468004/2023/3/23/532acb26-9b5f-449e-8ff2-db31f19d4d221679543943328CalvinKleinJeansMenGreySlimFitTrousers1.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "White",
+                "semantic_score": 0.681
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_7_retry_1750692592186744_649d79a9",
+            "rank": 7,
+            "score": 0.696,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "CASUAL LAYER",
+            "outfit_description": "Perfect casual layer featuring Casual sophistication and Casual style. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: casual - Perfect for casual weekend outings and social gatherings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15575",
+                "title": "Super Skinny Fit Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/22167448/2023/3/3/2a213870-fcff-455c-81ce-779f22eb8e361677819968319TshirtsboohooMANMenTshirtsboohooMANMenTshirtsboohooMANMenJea1.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "White",
+                "semantic_score": 0.672
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_8_retry_1750692592306640_53e12737",
+            "rank": 8,
+            "score": 0.696,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "CASUAL MOOD",
+            "outfit_description": "Perfect casual mood featuring Casual sophistication and Casual style. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: weekend - Ideal for weekend activities and relaxed settings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "4160",
+                "title": "Men Cropped Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/19684304/2024/12/26/9ba459ab-e498-4654-a2c6-da895a4a22441735215489643-Being-Human-Men-Brown-Regular-Fit-Jeans-2361735215489202-1.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "White",
+                "semantic_score": 0.667
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_9_retry_1750692592452052_68fd2d49",
+            "rank": 9,
+            "score": 0.696,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "MINIMAL REMIX",
+            "outfit_description": "This minimal remix brings together Blue and White for a balanced look. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: everyday - Great for daily wear and routine activities.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15658",
+                "title": "Men Cotton Slim Fit Jeans",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/MARCH/18/qpisdCdW_2b0e675b54344be7b2fa3bd5ecaee482.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "White",
+                "semantic_score": 0.666
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_10_retry_1750692592594266_5b4b2549",
+            "rank": 10,
+            "score": 0.696,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "CREAM COASTAL VIBE",
+            "outfit_description": "This cream coastal vibe showcases the perfect blend of Casual and Casual aesthetics. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: versatile - Suitable for various occasions and settings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15685",
+                "title": "Men Slim Cropped Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/24625350/2023/9/11/73536420-3694-40f2-87c9-cf6e41b9ab301694411208021TshirtsboohooMANMenTshirtsboohooMANMenTshirtsboohooMANMenTro1.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "White",
+                "semantic_score": 0.666
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_1",
+            "rank": 11,
+            "score": 0.683,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "CASUAL STORY",
+            "outfit_description": "Perfect casual story featuring Casual sophistication and Casual style. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15615",
+                "title": "Men Skinny Fit  Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/18951120/2022/7/4/412c4058-6329-4dfa-bc04-0a8552febe941656921735031BasicsMenGreySkinnyFitLow-RiseTrousers1.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "Black",
+                "semantic_score": 0.71
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_2",
+            "rank": 12,
+            "score": 0.683,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "CHARCOAL MINIMAL EDIT",
+            "outfit_description": "A charcoal minimal edit that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15830",
+                "title": "Men Slim Fit Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/28844168/2024/4/25/8e3afb55-e865-4a80-8ac7-7eafb89b3ff11714046148596BlazersMANGOWomenTrousersMANGOWomenWaistcoatMANGOWomenDresse1.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "Black",
+                "semantic_score": 0.695
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_3",
+            "rank": 13,
+            "score": 0.682,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "CHARCOAL CASUAL SHIFT",
+            "outfit_description": "This charcoal casual shift brings together Blue and Black for a balanced look. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: minimalist - This outfit features clean lines and simple elegance.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15828",
+                "title": "Men Tapered Fit Regular Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/13620478/2021/3/25/87d9fc87-4c20-4e63-b1c4-808ad3f3d7921616653401123-DENNISON-Men-Black-Smart-Tapered-Fit-Solid-Cropped-Regular-T-1.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "Black",
+                "semantic_score": 0.685
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_5",
+            "rank": 14,
+            "score": 0.682,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "COASTAL LAYER",
+            "outfit_description": "Perfect coastal layer featuring Casual sophistication and Casual style. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15850",
+                "title": "Men Straight Cropped Cargos",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/23474812/2023/7/27/bc797bc4-6d5b-44ba-89e5-7ec8c18dffe71690453827690-ALCOTT-Men-Straight-Fit-Cropped-Cargos-8371690453827387-1.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "Black",
+                "semantic_score": 0.679
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_6",
+            "rank": 15,
+            "score": 0.682,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "CHARCOAL CASUAL STORY",
+            "outfit_description": "A charcoal casual story that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "4179",
+                "title": "Men Tapered Fit Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/7719545/2024/6/7/83a83bed-a3bd-495e-9a8e-8652254215a51717734112189-DENNISON-Men-Black-Tapered-Fit-Cropped-Trousers-626171773411-1.jpg",
+                "price": 1000.0,
+                "style": "Casual",
+                "color": "Black",
+                "semantic_score": 0.679
+            },
+            "total_price": 1840.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_7",
+            "rank": 16,
+            "score": 0.682,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "COASTAL BRUNCH",
+            "outfit_description": "This coastal brunch showcases the perfect blend of Casual and Casual aesthetics. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15824",
+                "title": "Men Slim Fit Cargos Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/17859590/2022/6/3/a6856d03-e32f-4c15-9bc5-bda052b699a11654236702631-Blackberrys-Men-Trousers-3241654236701793-1.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "Black",
+                "semantic_score": 0.678
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_8",
+            "rank": 17,
+            "score": 0.682,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "CHARCOAL MINIMAL VIBE",
+            "outfit_description": "This charcoal minimal vibe brings together Blue and Black for a balanced look. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "5707",
+                "title": "Men Checked Formal Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/28672404/2024/5/17/a074f6f4-417a-4c86-b139-e10a4c6d189e1715923609490-INVICTUS-Men-Self-Checked-Cropped-Formal-Trousers-1551715923-1.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "Black",
+                "semantic_score": 0.673
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_9",
+            "rank": 18,
+            "score": 0.682,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "CHARCOAL MINIMAL TWIST",
+            "outfit_description": "This charcoal minimal twist showcases the perfect blend of Casual and Casual aesthetics. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15701",
+                "title": "Men Slim Fit Cropped Jeans",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/6747357/2018/7/2/d070391a-0896-463e-bb02-cd6d6056dc051530523872191-Ankle-Slim-Tapered-5721530523871052-1.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "Black",
+                "semantic_score": 0.672
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_11",
+            "rank": 19,
+            "score": 0.682,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "CASUAL COMBO",
+            "outfit_description": "A casual combo that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15568",
+                "title": "Men Loose Fit Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2024/DECEMBER/11/yTcIOU3h_60c9b6e7becd4a65802b1e1405394d2e.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "Black",
+                "semantic_score": 0.67
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_12",
+            "rank": 20,
+            "score": 0.681,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "SAGE ESSENCE",
+            "outfit_description": "A sage essence that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: everyday - Great for daily wear and routine activities.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: universal blue - The blue tones are universally flattering.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15686",
+                "title": "Men Slim Cropped Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/24625262/2023/9/14/8127022f-75d2-4e55-be65-a1d45b4e15861694681675323-boohooMAN-Striped-Slim-Fit-Pleated-Cropped-Trousers-61816946-1.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "Beige",
+                "semantic_score": 0.668
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_13",
+            "rank": 21,
+            "score": 0.681,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "CASUAL MOOD COMMUTE",
+            "outfit_description": "This casual mood commute showcases the perfect blend of Casual and Casual aesthetics. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15750",
+                "title": "Slim Fit Cropped Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/23753644/2023/6/28/83479ea8-4b74-4081-aad4-0e4b9850a1991687955424792boohooMANMenSlimTaperedFitTrousersWithTurnUpHemTrousersbooho1.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "Black",
+                "semantic_score": 0.667
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_16",
+            "rank": 22,
+            "score": 0.681,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "CHARCOAL CASUAL STYLE",
+            "outfit_description": "A charcoal casual style that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "4186",
+                "title": "Men Slim Fit Jeans",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2948543/2022/11/7/b402c77a-03fe-421b-b122-14afeab3d4351667824836019HIGHLANDERMenBlackSlimFitMid-RiseCleanLookStretchableCropped5.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "Black",
+                "semantic_score": 0.666
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_19",
+            "rank": 23,
+            "score": 0.681,
+            "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
+            "outfit_name": "MINIMAL LAYER WEEKEND",
+            "outfit_description": "This minimal layer weekend brings together Blue and Black for a balanced look. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15729",
+                "title": "Slim Fit Jeans",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2024/JULY/23/chbZ5G47_a427423892e6408f946b8f5664a1b63b.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "Black",
+                "semantic_score": 0.666
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_14",
+            "rank": 24,
+            "score": 0.0,
+            "explanation": "Incompatible: Color combination blue + cream may not be harmonious",
+            "outfit_name": "SAGE STATEMENT",
+            "outfit_description": "A sage statement that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: versatile - Suitable for various occasions and settings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: universal blue - The blue tones are universally flattering.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "4915",
+                "title": "Men Pleated Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2024/NOVEMBER/23/HAgXoRwZ_c8c430d984b340febe6d1fd6b5b080fe.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "Cream",
+                "semantic_score": 0.667
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        },
+        {
+            "main_outfit_id": "main_12_20",
+            "rank": 25,
+            "score": 0.0,
+            "explanation": "Incompatible: Color combination blue + unknown may not be harmonious",
+            "outfit_name": "NAVY COASTAL EDIT",
+            "outfit_description": "This navy coastal edit brings together Blue and Unknown for a balanced look. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: business casual - This outfit strikes the perfect balance between professional and comfortable.\n\nOccasion: everyday - Great for daily wear and routine activities.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: universal blue - The blue tones are universally flattering.",
+            "top": {
+                "id": "15888",
+                "title": "Men Printed Pockets T-shirt",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/2025/FEBRUARY/15/t329iYaM_a2d53c4706284a15bfe56c3b4951a621.jpg",
+                "price": 840.0,
+                "style": "Casual",
+                "color": "Blue",
+                "semantic_score": 0.775
+            },
+            "bottom": {
+                "id": "15717",
+                "title": "Auto Fit Waist Trousers",
+                "image": "https://assets.myntassets.com/h_720,q_90,w_540/v1/assets/images/18430770/2022/6/8/663f8655-8abd-438c-9310-f3c4a62cdfd01654680951397-Dennison-Men-Light-Blue-Smart-Tapered-Fit-Cropped-Waist-Flex-1.jpg",
+                "price": 700.0,
+                "style": "Casual",
+                "color": "Unknown",
+                "semantic_score": 0.666
+            },
+            "total_price": 1540.0,
+            "generated_at": "",
+            "generation_method": "faiss_semantic_enhanced"
+        }
+    ],
+    "total_count": 25,
+    "filters_applied": {}
+}
