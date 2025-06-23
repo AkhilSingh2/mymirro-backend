@@ -205,6 +205,7 @@ outfit_model = api.model('Outfit', {
     'explanation': fields.String(description='Outfit explanation', example='Ethnic wear recommendation | Men Solid Casual Shirt | Matches your contemporary style preference'),
     'outfit_name': fields.String(description='Generated outfit name', example='Urban Shift'),
     'outfit_description': fields.String(description='Generated outfit description', example='A contemporary urban ensemble featuring a sleek black t-shirt paired with tailored trousers for a modern, versatile look'),
+    'why_picked_explanation': fields.String(description='Personalized explanation of why this outfit was picked for the user', example='Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic.\n\nOccasion: casual - Perfect for relaxed, everyday activities.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: warm undertone - The color palette works well with your warm undertone.'),
     'top': fields.Nested(product_model, description='Top product details'),
     'bottom': fields.Nested(product_model, description='Bottom product details'),
     'total_price': fields.Float(description='Combined price of outfit', example=2099.0),
@@ -553,6 +554,7 @@ class UserOutfits(Resource):
                     'explanation': outfit.get('explanation', ''),
                     'outfit_name': outfit.get('outfit_name', ''),
                     'outfit_description': outfit.get('outfit_description', ''),
+                    'why_picked_explanation': outfit.get('why_picked_explanation', ''),
                     'top': {
                         'id': outfit.get('top_id', ''),
                         'title': outfit.get('top_title', ''),
@@ -707,6 +709,7 @@ class SimilarOutfits(Resource):
                         'explanation': f"Similar to {outfit_id} | {outfit_data.get('top_title', '')[:50]}... + {outfit_data.get('bottom_title', '')[:50]}...",
                         'outfit_name': outfit_data.get('outfit_name', ''),
                         'outfit_description': outfit_data.get('outfit_description', ''),
+                        'why_picked_explanation': outfit_data.get('why_picked_explanation', ''),
                         'top': {
                             'id': outfit_data.get('top_id', ''),
                             'title': outfit_data.get('top_title', ''),
