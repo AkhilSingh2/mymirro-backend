@@ -274,48 +274,104 @@ class SupabaseEnhancedSimilarProductsGenerator:
     
     def find_similar_products(self, product_id: str, num_similar: int = 10, 
                             user_preferences: Dict = None, filters: Dict = None) -> List[Dict]:
-        # Apply Railway CPU optimization before heavy computation
-        if self.is_railway:
-            for var in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'OPENBLAS_NUM_THREADS']:
-                os.environ[var] = '2'
-            logger.info("🔧 Applied CPU limits for similar products computation")
-        """Enhanced same-category similar products with diversity using Supabase."""
+        """
+        Enhanced same-category similar products with diversity, caching, and pre-filtering using Supabase.
+        """
+        from database import get_db
+        db = get_db()
+        import time
+        start_time = time.time()
+        # 1. Check for cached results first
+        cached = db.get_cached_similar_products(product_id, user_preferences, filters)
+        if cached and len(cached) >= num_similar:
+            logger.info(f"✅ Returning {len(cached)} cached similar products for {product_id}")
+            return cached[:num_similar]
+
+        # 2. Load and validate products from Supabase
+        products_df = self.load_products_from_supabase()
+        if products_df.empty:
+            logger.error("No products available from Supabase")
+            return []
+        products_df = self.validate_products_data(products_df)
+
+        # 3. Get source product
+        source_product = self.get_product_by_id(product_id, products_df)
+        logger.info(f"Finding similar products for: {source_product.get('title', 'Unknown')}")
+
+        # 4. Pre-FAISS Filtering
+        filtered_df = products_df.copy()
+        logger.info(f"🔍 Starting filtering. Initial products: {len(filtered_df)}")
         
-        try:
-            # Load and validate products from Supabase
-            products_df = self.load_products_from_supabase()
-            
-            if products_df.empty:
-                logger.error("No products available from Supabase")
-                return []
-            
-            products_df = self.validate_products_data(products_df)
-            
-            # Get source product
-            source_product = self.get_product_by_id(product_id, products_df)
-            logger.info(f"Finding similar products for: {source_product.get('title', 'Unknown')}")
-            
-            # Build FAISS indexes
-            self.build_faiss_indexes(products_df)
-            
-            # Generate same-category candidates only
-            candidates = self._generate_same_category_candidates(source_product, products_df, user_preferences)
-            
-            if not candidates:
-                logger.warning("No candidate products found")
-                return []
-            
-            # Apply enhanced scoring and filtering for diversity
-            similar_products = self._score_and_filter_same_category_candidates(
-                source_product, candidates, user_preferences, filters, num_similar
-            )
-            
-            logger.info(f"Found {len(similar_products)} diverse same-category products")
-            return similar_products
-            
-        except Exception as e:
-            logger.error(f"Error finding similar products: {e}")
-            raise
+        # Gender filter
+        if user_preferences and user_preferences.get('gender'):
+            gender = user_preferences['gender'].lower()
+            filtered_df = filtered_df[filtered_df['gender'].str.lower().isin([gender, 'unisex'])]
+            logger.info(f"🔍 After gender filter: {len(filtered_df)} products")
+        
+        # Product type/category filter
+        if 'wear_type' in source_product:
+            filtered_df = filtered_df[filtered_df['wear_type'] == source_product['wear_type']]
+            logger.info(f"🔍 After wear_type filter: {len(filtered_df)} products")
+        
+        # Primary style filter
+        if 'primary_style' in source_product and source_product['primary_style']:
+            filtered_df = filtered_df[filtered_df['primary_style'] == source_product['primary_style']]
+            logger.info(f"🔍 After primary_style filter: {len(filtered_df)} products")
+        
+        # Multi-style filter (make it less strict)
+        if 'primary_style_multi' in source_product and source_product['primary_style_multi']:
+            style_multi = set(source_product['primary_style_multi'])
+            # Only apply this filter if we have a reasonable number of products
+            if len(filtered_df) > 100:  # Only filter if we have enough products
+                filtered_df = filtered_df[filtered_df['primary_style_multi'].apply(
+                    lambda x: bool(set(x) & style_multi) if isinstance(x, list) and x else True
+                )]
+                logger.info(f"🔍 After primary_style_multi filter: {len(filtered_df)} products")
+            else:
+                logger.info(f"🔍 Skipping primary_style_multi filter (not enough products: {len(filtered_df)})")
+        else:
+            logger.info(f"🔍 No primary_style_multi filter applied")
+        
+        # Additional filters
+        if filters:
+            if 'price_range' in filters:
+                min_price, max_price = filters['price_range']
+                filtered_df = filtered_df[(filtered_df['price'] >= min_price) & (filtered_df['price'] <= max_price)]
+                logger.info(f"🔍 After price_range filter: {len(filtered_df)} products")
+            if 'styles' in filters:
+                filtered_df = filtered_df[filtered_df['primary_style'].isin(filters['styles'])]
+                logger.info(f"🔍 After styles filter: {len(filtered_df)} products")
+            if 'colors' in filters:
+                filtered_df = filtered_df[filtered_df['primary_color'].isin(filters['colors'])]
+                logger.info(f"🔍 After colors filter: {len(filtered_df)} products")
+            if 'brand' in filters:
+                filtered_df = filtered_df[filtered_df['brand'] == filters['brand']]
+                logger.info(f"🔍 After brand filter: {len(filtered_df)} products")
+        
+        logger.info(f"🔍 Final filtered products: {len(filtered_df)}")
+        
+        # 5. Build FAISS indexes on filtered set
+        self.build_faiss_indexes(filtered_df)
+
+        # 6. Generate same-category candidates only (from filtered set)
+        candidates = self._generate_same_category_candidates(source_product, filtered_df, user_preferences)
+        if not candidates:
+            logger.warning("No candidate products found after filtering")
+            logger.warning("⚠️ Skipping database storage due to no results")
+            return []
+
+        # 7. Apply enhanced scoring and filtering for diversity
+        similar_products = self._score_and_filter_same_category_candidates(
+            source_product, candidates, user_preferences, filters, num_similar
+        )
+        logger.info(f"Found {len(similar_products)} diverse same-category products after filtering and FAISS")
+
+        # 8. Store results in cache
+        processing_time_ms = int((time.time() - start_time) * 1000)
+        logger.info(f"💾 Storing {len(similar_products)} results in database cache...")
+        db.store_similar_products(product_id, similar_products, user_preferences, filters, processing_time_ms)
+
+        return similar_products[:num_similar]
     
     def _generate_same_category_candidates(self, source_product: pd.Series, products_df: pd.DataFrame, 
                                          user_preferences: Dict = None) -> List[Dict]:

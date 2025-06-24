@@ -338,13 +338,14 @@ class SupabaseDB:
             logger.error(f"❌ Error fetching user outfits: {e}")
             return pd.DataFrame()
     
-    def save_user_outfits(self, outfits_df: pd.DataFrame, user_id: int) -> bool:
+    def save_user_outfits(self, outfits_df: pd.DataFrame, user_id: int, skip_deletion: bool = False) -> bool:
         """
         Save outfit recommendations to Supabase.
         
         Args:
             outfits_df: DataFrame containing outfit recommendations
             user_id: User ID
+            skip_deletion: If True, skip deleting existing outfits (for batch operations)
             
         Returns:
             bool: Success status
@@ -361,8 +362,9 @@ class SupabaseDB:
             for outfit in outfits_data:
                 outfit['user_id'] = user_id
             
-            # Delete existing outfits for this user
-            self.client.table('user_outfits').delete().eq('user_id', user_id).execute()
+            # Delete existing outfits for this user (unless skipping for batch operations)
+            if not skip_deletion:
+                self.client.table('user_outfits').delete().eq('user_id', user_id).execute()
             
             # Insert new outfits
             result = self.client.table('user_outfits').insert(outfits_data).execute()
@@ -833,16 +835,56 @@ class SupabaseDB:
             
             # Extract user filters
             user_gender = user_data.get('Gender', '').lower()
-            user_style = user_data.get('Fashion Style', '').strip()
             
             # Start with a simple query and build up
             query = self.client.table('tagged_products').select('*')
             
-            # Apply basic wear type filters first
-            query = query.or_(f"scraped_category.ilike.%shirt%,scraped_category.ilike.%pant%")
+            # ✅ FIX: Use user's apparel preferences instead of hardcoded categories
+            apparel_filters = []
+            
+            # Check user's apparel preferences
+            if user_data.get('Apparel Pref Business Casual', False):
+                apparel_filters.extend(['shirt', 'pant', 'trouser', 'jean', 'blouse', 'top'])
+            
+            if user_data.get('Apparel Pref Streetwear', False):
+                apparel_filters.extend(['tshirt', 't-shirt', 'hoodie', 'sweatshirt', 'jean', 'pant', 'jogger', 'track'])
+            
+            if user_data.get('Apparel Pref Athleisure', False):
+                apparel_filters.extend(['jogger', 'legging', 'track', 'sport', 'athletic', 'hoodie', 'sweatshirt', 'tshirt', 't-shirt'])
+            
+            # If no specific apparel preferences, use fallback based on gender
+            if not apparel_filters:
+                if user_gender in ['male', 'men']:
+                    apparel_filters = ['shirt', 'pant', 'jean', 'trouser', 'tshirt', 't-shirt']
+                elif user_gender in ['female', 'women']:
+                    apparel_filters = ['top', 'blouse', 'shirt', 'pant', 'jean', 'trouser', 'skirt', 'dress']
+                else:
+                    apparel_filters = ['shirt', 'pant', 'jean', 'trouser', 'top', 'blouse']
+            
+            # Remove duplicates and create category filter
+            apparel_filters = list(set(apparel_filters))
+            category_filter = ','.join([f"scraped_category.ilike.%{filter}%" for filter in apparel_filters])
+            
+            # Apply category filter
+            query = query.or_(category_filter)
+            
+            # Apply gender filtering at database level
+            if user_gender:
+                if user_gender in ['male', 'men']:
+                    # For male users: allow male and unisex products
+                    query = query.in_('gender', ['Male', 'Unisex'])
+                elif user_gender in ['female', 'women']:
+                    # For female users: allow female and unisex products
+                    query = query.in_('gender', ['Female', 'Unisex'])
+                elif user_gender in ['unisex']:
+                    # For unisex users: allow all genders
+                    pass  # No additional filtering needed
+                else:
+                    # For other genders: allow same gender and unisex
+                    query = query.in_('gender', [user_gender.title(), 'Unisex'])
             
             # Execute the filtered query
-            logger.info("📥 Executing pre-filtered database query...")
+            logger.info(f"📥 Executing pre-filtered database query with categories: {apparel_filters}")
             result = query.execute()
             
             if result.data:
@@ -862,6 +904,275 @@ class SupabaseDB:
             logger.error(f"❌ Error in pre-filtered product query: {e}")
             logger.info("🔄 Falling back to chunked loading...")
             return self.get_products()
+
+    def create_similar_products_table(self) -> bool:
+        """
+        Create the similar_products table if it doesn't exist.
+        
+        Returns:
+            bool: True if table was created successfully or already exists
+        """
+        try:
+            if not self.client:
+                logger.error("❌ Supabase client not initialized")
+                return False
+            
+            # SQL to create the similar_products table
+            create_table_sql = """
+            CREATE TABLE IF NOT EXISTS similar_products (
+                id SERIAL PRIMARY KEY,
+                
+                -- Main product identification
+                main_product_id VARCHAR(50) NOT NULL,
+                main_product_title TEXT,
+                main_product_wear_type VARCHAR(50),
+                main_product_gender VARCHAR(20),
+                main_product_primary_style VARCHAR(100),
+                main_product_primary_style_multi TEXT[],
+                main_product_primary_color VARCHAR(50),
+                main_product_price DECIMAL(10,2),
+                
+                -- Similar product details
+                similar_product_id VARCHAR(50) NOT NULL,
+                similar_product_title TEXT,
+                similar_product_wear_type VARCHAR(50),
+                similar_product_gender VARCHAR(20),
+                similar_product_primary_style VARCHAR(100),
+                similar_product_primary_style_multi TEXT[],
+                similar_product_primary_color VARCHAR(50),
+                similar_product_price DECIMAL(10,2),
+                similar_product_brand VARCHAR(100),
+                similar_product_image_url TEXT,
+                
+                -- Similarity scoring and metadata
+                similarity_score DECIMAL(5,4) NOT NULL,
+                semantic_similarity DECIMAL(5,4),
+                style_compatibility DECIMAL(5,4),
+                color_diversity DECIMAL(5,4),
+                design_diversity DECIMAL(5,4),
+                price_similarity DECIMAL(5,4),
+                user_preference_boost DECIMAL(5,4),
+                
+                -- Candidate type and diversity features
+                candidate_type VARCHAR(50),
+                diversity_features TEXT[],
+                
+                -- Filtering and user context
+                user_gender VARCHAR(20),
+                user_preferred_styles TEXT[],
+                user_preferred_colors TEXT[],
+                user_price_range_min DECIMAL(10,2),
+                user_price_range_max DECIMAL(10,2),
+                
+                -- Applied filters
+                applied_filters JSONB,
+                
+                -- Caching and performance
+                is_cached BOOLEAN DEFAULT FALSE,
+                cache_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                cache_expiry TIMESTAMP,
+                processing_time_ms INTEGER,
+                
+                -- Ranking and selection
+                faiss_rank INTEGER,
+                final_rank INTEGER,
+                is_selected BOOLEAN DEFAULT FALSE,
+                
+                -- Metadata
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                
+                -- Constraints
+                CONSTRAINT unique_product_pair UNIQUE (main_product_id, similar_product_id)
+            );
+            """
+            
+            # Execute the SQL using Supabase's rpc method
+            result = self.client.rpc('exec_sql', {'sql': create_table_sql}).execute()
+            
+            logger.info("✅ Similar products table created successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error creating similar products table: {e}")
+            return False
+
+    def store_similar_products(self, main_product_id: str, similar_products: List[Dict], 
+                              user_preferences: Dict = None, filters: Dict = None,
+                              processing_time_ms: int = None) -> bool:
+        """
+        Store similar products results in the database with caching.
+        
+        Args:
+            main_product_id: ID of the main product
+            similar_products: List of similar products with scores
+            user_preferences: User preferences used for filtering
+            filters: Applied filters
+            processing_time_ms: Processing time in milliseconds
+            
+        Returns:
+            bool: True if stored successfully
+        """
+        try:
+            if not self.client:
+                logger.error("❌ Supabase client not initialized")
+                return False
+            
+            # Helper function to convert numpy types to Python native types
+            def convert_numpy_types(obj):
+                import numpy as np
+                if isinstance(obj, np.integer):
+                    return int(obj)
+                elif isinstance(obj, np.floating):
+                    return float(obj)
+                elif isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                elif isinstance(obj, dict):
+                    return {k: convert_numpy_types(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_numpy_types(item) for item in obj]
+                return obj
+            
+            # Prepare data for insertion
+            records = []
+            cache_expiry = pd.Timestamp.now() + pd.Timedelta(hours=24)  # 24 hour cache
+            
+            for i, product in enumerate(similar_products):
+                # Convert numpy types to Python native types
+                product = convert_numpy_types(product)
+                
+                record = {
+                    'main_product_id': main_product_id,
+                    'main_product_title': product.get('main_product_title', ''),
+                    'main_product_wear_type': product.get('main_product_wear_type', ''),
+                    'main_product_gender': product.get('main_product_gender', ''),
+                    'main_product_primary_style': product.get('main_product_primary_style', ''),
+                    'main_product_primary_style_multi': product.get('main_product_primary_style_multi', []),
+                    'main_product_primary_color': product.get('main_product_primary_color', ''),
+                    'main_product_price': float(product.get('main_product_price', 0)),
+                    
+                    'similar_product_id': product.get('product_id', ''),
+                    'similar_product_title': product.get('title', ''),
+                    'similar_product_wear_type': product.get('wear_type', ''),
+                    'similar_product_gender': product.get('gender', ''),
+                    'similar_product_primary_style': product.get('primary_style', ''),
+                    'similar_product_primary_style_multi': product.get('primary_style_multi', []),
+                    'similar_product_primary_color': product.get('primary_color', ''),
+                    'similar_product_price': float(product.get('price', 0)),
+                    'similar_product_brand': product.get('brand', ''),
+                    'similar_product_image_url': product.get('image_url', ''),
+                    
+                    'similarity_score': float(product.get('similarity_score', 0)),
+                    'semantic_similarity': float(product.get('score_breakdown', {}).get('semantic_similarity', 0)),
+                    'style_compatibility': float(product.get('score_breakdown', {}).get('style_compatibility', 0)),
+                    'color_diversity': float(product.get('score_breakdown', {}).get('color_diversity', 0)),
+                    'design_diversity': float(product.get('score_breakdown', {}).get('design_diversity', 0)),
+                    'price_similarity': float(product.get('score_breakdown', {}).get('price_similarity', 0)),
+                    'user_preference_boost': float(product.get('score_breakdown', {}).get('user_preference_boost', 0)),
+                    
+                    'candidate_type': product.get('candidate_type', 'core_similar'),
+                    'diversity_features': product.get('diversity_features', []),
+                    
+                    'user_gender': user_preferences.get('gender', '') if user_preferences else '',
+                    'user_preferred_styles': user_preferences.get('preferred_styles', []) if user_preferences else [],
+                    'user_preferred_colors': user_preferences.get('preferred_colors', []) if user_preferences else [],
+                    'user_price_range_min': float(user_preferences.get('price_range', [0, 0])[0]) if user_preferences else 0,
+                    'user_price_range_max': float(user_preferences.get('price_range', [0, 0])[1]) if user_preferences else 0,
+                    
+                    'applied_filters': convert_numpy_types(filters) if filters else None,
+                    'is_cached': True,
+                    'cache_expiry': cache_expiry.isoformat(),
+                    'processing_time_ms': int(processing_time_ms) if processing_time_ms else None,
+                    'faiss_rank': int(product.get('faiss_rank', 0)),
+                    'final_rank': i + 1,
+                    'is_selected': True
+                }
+                records.append(record)
+            
+            # Insert records using upsert to handle duplicates
+            result = self.client.table('similar_products').upsert(records).execute()
+            
+            logger.info(f"✅ Stored {len(records)} similar products for product {main_product_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error storing similar products: {e}")
+            return False
+
+    def get_cached_similar_products(self, main_product_id: str, user_preferences: Dict = None, 
+                                   filters: Dict = None) -> List[Dict]:
+        """
+        Retrieve cached similar products from database.
+        
+        Args:
+            main_product_id: ID of the main product
+            user_preferences: User preferences for cache matching
+            filters: Applied filters for cache matching
+            
+        Returns:
+            List[Dict]: Cached similar products or empty list if not found
+        """
+        try:
+            if not self.client:
+                logger.error("❌ Supabase client not initialized")
+                return []
+            
+            # Build query for cached results
+            query = self.client.table('similar_products').select('*').eq('main_product_id', main_product_id)
+            
+            # Check if cache is still valid
+            query = query.eq('is_cached', True).gte('cache_expiry', pd.Timestamp.now().isoformat())
+            
+            # Add user preference matching if provided
+            if user_preferences:
+                user_gender = user_preferences.get('gender', '')
+                if user_gender:
+                    query = query.eq('user_gender', user_gender)
+            
+            # Add filter matching if provided
+            if filters:
+                # For now, we'll do basic filter matching
+                # In a more sophisticated implementation, we could compare JSON filters
+                pass
+            
+            # Get selected results only
+            query = query.eq('is_selected', True).order('final_rank')
+            
+            result = query.execute()
+            
+            if result.data:
+                logger.info(f"✅ Retrieved {len(result.data)} cached similar products for product {main_product_id}")
+                return result.data
+            else:
+                logger.info(f"ℹ️ No cached results found for product {main_product_id}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"❌ Error retrieving cached similar products: {e}")
+            return []
+
+    def clean_expired_cache(self) -> int:
+        """
+        Clean expired cache entries from the similar_products table.
+        
+        Returns:
+            int: Number of deleted records
+        """
+        try:
+            if not self.client:
+                logger.error("❌ Supabase client not initialized")
+                return 0
+            
+            # Delete expired cache entries
+            result = self.client.table('similar_products').delete().eq('is_cached', True).lt('cache_expiry', pd.Timestamp.now().isoformat()).execute()
+            
+            deleted_count = len(result.data) if result.data else 0
+            logger.info(f"🧹 Cleaned {deleted_count} expired cache entries")
+            return deleted_count
+            
+        except Exception as e:
+            logger.error(f"❌ Error cleaning expired cache: {e}")
+            return 0
 
 # Global database instance
 db = SupabaseDB()

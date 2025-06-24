@@ -3,12 +3,12 @@
     "user_id": 12,
     "outfits": [
         {
-            "main_outfit_id": "main_12_1_retry_1750692591409886_862c32b0",
+            "main_outfit_id": "main_12_1_retry_1750695129538252_7a337bd3",
             "rank": 1,
             "score": 0.696,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "MINIMAL WEEKEND",
-            "outfit_description": "Perfect minimal weekend featuring Casual sophistication and Casual style. Ideal for bold individuals.",
+            "outfit_name": "MINIMAL BRUNCH",
+            "outfit_description": "Perfect minimal brunch featuring Casual sophistication and Casual style. Ideal for bold individuals.",
             "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: versatile - Suitable for various occasions and settings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
@@ -33,12 +33,12 @@
             "generation_method": "faiss_semantic_enhanced"
         },
         {
-            "main_outfit_id": "main_12_2_retry_1750692591540444_9b599246",
+            "main_outfit_id": "main_12_2_retry_1750695129674578_3b72e1ef",
             "rank": 2,
             "score": 0.683,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "CASUAL STORY",
-            "outfit_description": "Perfect casual story featuring Casual sophistication and Casual style. Ideal for bold individuals.",
+            "outfit_name": "CHARCOAL SIGNATURE",
+            "outfit_description": "A versatile charcoal signature that works for both casual and elevated occasions. Ideal for bold individuals.",
             "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
@@ -63,13 +63,13 @@
             "generation_method": "faiss_semantic_enhanced"
         },
         {
-            "main_outfit_id": "main_12_3_retry_1750692591677623_9aea3e89",
+            "main_outfit_id": "main_12_3_retry_1750695129798820_b676b22c",
             "rank": 3,
             "score": 0.681,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "SAGE ESSENCE",
-            "outfit_description": "A sage essence that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
-            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: everyday - Great for daily wear and routine activities.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: universal blue - The blue tones are universally flattering.",
+            "outfit_name": "NAVY CASUAL MOOD",
+            "outfit_description": "A versatile navy casual mood that works for both casual and elevated occasions. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: casual - Perfect for casual weekend outings and social gatherings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: universal blue - The blue tones are universally flattering.",
             "top": {
                 "id": "15888",
                 "title": "Men Printed Pockets T-shirt",
@@ -93,13 +93,13 @@
             "generation_method": "faiss_semantic_enhanced"
         },
         {
-            "main_outfit_id": "main_12_4_retry_1750692591803053_5e8f2d1f",
+            "main_outfit_id": "main_12_4_retry_1750695129914416_e105edec",
             "rank": 4,
             "score": 0.0,
             "explanation": "Incompatible: Color combination blue + cream may not be harmonious",
-            "outfit_name": "SAGE STATEMENT",
-            "outfit_description": "A sage statement that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
-            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: versatile - Suitable for various occasions and settings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: universal blue - The blue tones are universally flattering.",
+            "outfit_name": "CASUAL VIBE BRUNCH",
+            "outfit_description": "Perfect casual vibe brunch featuring Casual sophistication and Casual style. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: everyday - Great for daily wear and routine activities.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: universal blue - The blue tones are universally flattering.",
             "top": {
                 "id": "15888",
                 "title": "Men Printed Pockets T-shirt",
@@ -123,13 +123,13 @@
             "generation_method": "faiss_semantic_enhanced"
         },
         {
-            "main_outfit_id": "main_12_5_retry_1750692591949837_31518b4b",
+            "main_outfit_id": "main_12_5_retry_1750695130041376_6ce6a634",
             "rank": 5,
             "score": 0.0,
             "explanation": "Incompatible: Color combination blue + unknown may not be harmonious",
-            "outfit_name": "NAVY COASTAL EDIT",
-            "outfit_description": "This navy coastal edit brings together Blue and Unknown for a balanced look. Ideal for bold individuals.",
-            "why_picked_explanation": "Style Vibe: business casual - This outfit strikes the perfect balance between professional and comfortable.\n\nOccasion: everyday - Great for daily wear and routine activities.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: universal blue - The blue tones are universally flattering.",
+            "outfit_name": "SAGE REMIX",
+            "outfit_description": "This sage remix brings together Blue and Unknown for a balanced look. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: business casual - This outfit strikes the perfect balance between professional and comfortable.\n\nOccasion: casual - Perfect for casual weekend outings and social gatherings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: universal blue - The blue tones are universally flattering.",
             "top": {
                 "id": "15888",
                 "title": "Men Printed Pockets T-shirt",
@@ -153,12 +153,12 @@
             "generation_method": "faiss_semantic_enhanced"
         },
         {
-            "main_outfit_id": "main_12_6_retry_1750692592063626_8bfc133f",
+            "main_outfit_id": "main_12_6_retry_1750695130164698_85eb9225",
             "rank": 6,
             "score": 0.696,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "MINIMAL WEEKEND",
-            "outfit_description": "Perfect minimal weekend featuring Casual sophistication and Casual style. Ideal for bold individuals.",
+            "outfit_name": "MINIMAL BRUNCH",
+            "outfit_description": "Perfect minimal brunch featuring Casual sophistication and Casual style. Ideal for bold individuals.",
             "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: versatile - Suitable for various occasions and settings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
@@ -183,13 +183,13 @@
             "generation_method": "faiss_semantic_enhanced"
         },
         {
-            "main_outfit_id": "main_12_7_retry_1750692592186744_649d79a9",
+            "main_outfit_id": "main_12_7_retry_1750695130288388_304ec248",
             "rank": 7,
             "score": 0.696,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "CASUAL LAYER",
-            "outfit_description": "Perfect casual layer featuring Casual sophistication and Casual style. Ideal for bold individuals.",
-            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: casual - Perfect for casual weekend outings and social gatherings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "outfit_name": "CREAM STYLE",
+            "outfit_description": "This cream style brings together Blue and White for a balanced look. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: versatile - Suitable for various occasions and settings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
                 "title": "Men Printed Pockets T-shirt",
@@ -213,13 +213,13 @@
             "generation_method": "faiss_semantic_enhanced"
         },
         {
-            "main_outfit_id": "main_12_8_retry_1750692592306640_53e12737",
+            "main_outfit_id": "main_12_8_retry_1750695130411289_449e8876",
             "rank": 8,
             "score": 0.696,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "CASUAL MOOD",
-            "outfit_description": "Perfect casual mood featuring Casual sophistication and Casual style. Ideal for bold individuals.",
-            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: weekend - Ideal for weekend activities and relaxed settings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "outfit_name": "CASUAL WEEKEND",
+            "outfit_description": "A versatile casual weekend that works for both casual and elevated occasions. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: versatile - Suitable for various occasions and settings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
                 "title": "Men Printed Pockets T-shirt",
@@ -243,13 +243,13 @@
             "generation_method": "faiss_semantic_enhanced"
         },
         {
-            "main_outfit_id": "main_12_9_retry_1750692592452052_68fd2d49",
+            "main_outfit_id": "main_12_9_retry_1750695130541207_211eb89b",
             "rank": 9,
             "score": 0.696,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "MINIMAL REMIX",
-            "outfit_description": "This minimal remix brings together Blue and White for a balanced look. Ideal for bold individuals.",
-            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: everyday - Great for daily wear and routine activities.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
+            "outfit_name": "COASTAL WEEKEND",
+            "outfit_description": "Perfect coastal weekend featuring Casual sophistication and Casual style. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: weekend - Ideal for weekend activities and relaxed settings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
                 "title": "Men Printed Pockets T-shirt",
@@ -273,12 +273,12 @@
             "generation_method": "faiss_semantic_enhanced"
         },
         {
-            "main_outfit_id": "main_12_10_retry_1750692592594266_5b4b2549",
+            "main_outfit_id": "main_12_10_retry_1750695130668458_3d757a0c",
             "rank": 10,
             "score": 0.696,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "CREAM COASTAL VIBE",
-            "outfit_description": "This cream coastal vibe showcases the perfect blend of Casual and Casual aesthetics. Ideal for bold individuals.",
+            "outfit_name": "MINIMAL STORY COMMUTE",
+            "outfit_description": "A minimal story commute that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
             "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: versatile - Suitable for various occasions and settings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
@@ -307,8 +307,8 @@
             "rank": 11,
             "score": 0.683,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "CASUAL STORY",
-            "outfit_description": "Perfect casual story featuring Casual sophistication and Casual style. Ideal for bold individuals.",
+            "outfit_name": "CHARCOAL SIGNATURE",
+            "outfit_description": "A versatile charcoal signature that works for both casual and elevated occasions. Ideal for bold individuals.",
             "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
@@ -337,8 +337,8 @@
             "rank": 12,
             "score": 0.683,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "CHARCOAL MINIMAL EDIT",
-            "outfit_description": "A charcoal minimal edit that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
+            "outfit_name": "COASTAL SET COMMUTE",
+            "outfit_description": "Perfect coastal set commute featuring Casual sophistication and Casual style. Ideal for bold individuals.",
             "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
@@ -367,8 +367,8 @@
             "rank": 13,
             "score": 0.682,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "CHARCOAL CASUAL SHIFT",
-            "outfit_description": "This charcoal casual shift brings together Blue and Black for a balanced look. Ideal for bold individuals.",
+            "outfit_name": "COASTAL WEEKEND",
+            "outfit_description": "A versatile coastal weekend that works for both casual and elevated occasions. Ideal for bold individuals.",
             "why_picked_explanation": "Style Vibe: minimalist - This outfit features clean lines and simple elegance.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
@@ -397,8 +397,8 @@
             "rank": 14,
             "score": 0.682,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "COASTAL LAYER",
-            "outfit_description": "Perfect coastal layer featuring Casual sophistication and Casual style. Ideal for bold individuals.",
+            "outfit_name": "CASUAL COMMUTE",
+            "outfit_description": "This casual commute brings together Blue and Black for a balanced look. Ideal for bold individuals.",
             "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
@@ -427,8 +427,8 @@
             "rank": 15,
             "score": 0.682,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "CHARCOAL CASUAL STORY",
-            "outfit_description": "A charcoal casual story that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
+            "outfit_name": "COASTAL COMMUTE",
+            "outfit_description": "A coastal commute that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
             "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
@@ -457,8 +457,8 @@
             "rank": 16,
             "score": 0.682,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "COASTAL BRUNCH",
-            "outfit_description": "This coastal brunch showcases the perfect blend of Casual and Casual aesthetics. Ideal for bold individuals.",
+            "outfit_name": "CHARCOAL CASUAL STATEMENT",
+            "outfit_description": "This charcoal casual statement showcases the perfect blend of Casual and Casual aesthetics. Ideal for bold individuals.",
             "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
@@ -487,8 +487,8 @@
             "rank": 17,
             "score": 0.682,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "CHARCOAL MINIMAL VIBE",
-            "outfit_description": "This charcoal minimal vibe brings together Blue and Black for a balanced look. Ideal for bold individuals.",
+            "outfit_name": "CASUAL STATEMENT",
+            "outfit_description": "A casual statement that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
             "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
@@ -517,8 +517,8 @@
             "rank": 18,
             "score": 0.682,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "CHARCOAL MINIMAL TWIST",
-            "outfit_description": "This charcoal minimal twist showcases the perfect blend of Casual and Casual aesthetics. Ideal for bold individuals.",
+            "outfit_name": "CASUAL BRUNCH",
+            "outfit_description": "This casual brunch brings together Blue and Black for a balanced look. Ideal for bold individuals.",
             "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
@@ -547,8 +547,8 @@
             "rank": 19,
             "score": 0.682,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "CASUAL COMBO",
-            "outfit_description": "A casual combo that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
+            "outfit_name": "COASTAL STYLE WEEKEND",
+            "outfit_description": "A coastal style weekend that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
             "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
@@ -577,9 +577,9 @@
             "rank": 20,
             "score": 0.681,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "SAGE ESSENCE",
-            "outfit_description": "A sage essence that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
-            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: everyday - Great for daily wear and routine activities.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: universal blue - The blue tones are universally flattering.",
+            "outfit_name": "NAVY CASUAL MOOD",
+            "outfit_description": "A versatile navy casual mood that works for both casual and elevated occasions. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: casual - Perfect for casual weekend outings and social gatherings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: universal blue - The blue tones are universally flattering.",
             "top": {
                 "id": "15888",
                 "title": "Men Printed Pockets T-shirt",
@@ -607,8 +607,8 @@
             "rank": 21,
             "score": 0.681,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "CASUAL MOOD COMMUTE",
-            "outfit_description": "This casual mood commute showcases the perfect blend of Casual and Casual aesthetics. Ideal for bold individuals.",
+            "outfit_name": "MINIMAL WEEKEND",
+            "outfit_description": "This minimal weekend showcases the perfect blend of Casual and Casual aesthetics. Ideal for bold individuals.",
             "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
@@ -637,8 +637,8 @@
             "rank": 22,
             "score": 0.681,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "CHARCOAL CASUAL STYLE",
-            "outfit_description": "A charcoal casual style that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
+            "outfit_name": "CHARCOAL MINIMAL LOOK",
+            "outfit_description": "A versatile charcoal minimal look that works for both casual and elevated occasions. Ideal for bold individuals.",
             "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
@@ -667,8 +667,8 @@
             "rank": 23,
             "score": 0.681,
             "explanation": "Color: Fair | \u2713 Strong Semantic Similarity | \u2713 Strong Comfort Metrics | \u2713 Strong Style Intelligence | \u2713 Strong Price Coherence",
-            "outfit_name": "MINIMAL LAYER WEEKEND",
-            "outfit_description": "This minimal layer weekend brings together Blue and Black for a balanced look. Ideal for bold individuals.",
+            "outfit_name": "MINIMAL BRUNCH",
+            "outfit_description": "A versatile minimal brunch that works for both casual and elevated occasions. Ideal for bold individuals.",
             "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: work - Perfect for professional settings and office environments.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: versatile colors - The neutral colors work well with any undertone.",
             "top": {
                 "id": "15888",
@@ -697,9 +697,9 @@
             "rank": 24,
             "score": 0.0,
             "explanation": "Incompatible: Color combination blue + cream may not be harmonious",
-            "outfit_name": "SAGE STATEMENT",
-            "outfit_description": "A sage statement that combines Casual elegance with Casual comfort. Ideal for bold individuals.",
-            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: versatile - Suitable for various occasions and settings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: universal blue - The blue tones are universally flattering.",
+            "outfit_name": "CASUAL VIBE BRUNCH",
+            "outfit_description": "Perfect casual vibe brunch featuring Casual sophistication and Casual style. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: streetwear - This outfit embodies a bold, urban aesthetic that matches your streetwear preference.\n\nOccasion: everyday - Great for daily wear and routine activities.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: universal blue - The blue tones are universally flattering.",
             "top": {
                 "id": "15888",
                 "title": "Men Printed Pockets T-shirt",
@@ -727,9 +727,9 @@
             "rank": 25,
             "score": 0.0,
             "explanation": "Incompatible: Color combination blue + unknown may not be harmonious",
-            "outfit_name": "NAVY COASTAL EDIT",
-            "outfit_description": "This navy coastal edit brings together Blue and Unknown for a balanced look. Ideal for bold individuals.",
-            "why_picked_explanation": "Style Vibe: business casual - This outfit strikes the perfect balance between professional and comfortable.\n\nOccasion: everyday - Great for daily wear and routine activities.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: universal blue - The blue tones are universally flattering.",
+            "outfit_name": "SAGE REMIX",
+            "outfit_description": "This sage remix brings together Blue and Unknown for a balanced look. Ideal for bold individuals.",
+            "why_picked_explanation": "Style Vibe: business casual - This outfit strikes the perfect balance between professional and comfortable.\n\nOccasion: casual - Perfect for casual weekend outings and social gatherings.\n\nBody Type: rectangle - This outfit creates definition for your rectangular body shape.\n\nSkin Undertone: universal blue - The blue tones are universally flattering.",
             "top": {
                 "id": "15888",
                 "title": "Men Printed Pockets T-shirt",
