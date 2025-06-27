@@ -51,53 +51,69 @@ class SkinToneAnalyzer:
         
         # Color mapping dictionary for converting descriptive names to CSS colors
         self.COLOR_MAP = {
-            # Blues
             'Navy Blue': '#000080',
-            'Powder Blue': '#B0E0E6',
-            'Ice Blue': '#B5E0E6',
-            'Cobalt Blue': '#0047AB',
-            'Steel Blue': '#4682B4',
-            'Teal': '#008080',
-            'Mint': '#98FF98',
-            
-            # Reds and Pinks
-            'Coral': '#FF7F50',
-            'Burgundy': '#800020',
-            'Plum': '#8E4585',
-            'Soft Pink': '#FFB6C1',
-            'Pale Pink': '#FFC0CB',
-            'Lavender': '#E6E6FA',
-            
-            # Greens
-            'Olive Green': '#808000',
-            'Emerald': '#50C878',
-            'Emerald Green': '#50C878',
-            
-            # Yellows and Oranges
-            'Golden Yellow': '#FFD700',
-            'Mustard': '#FFDB58',
-            'Mustard Yellow': '#FFDB58',
-            'Burnt Orange': '#CC5500',
-            'Peach': '#FFE5B4',
-            
-            # Grays and Neutrals
-            'Charcoal': '#36454F',
             'Charcoal Gray': '#36454F',
-            'Heather Gray': '#B6B6B6',
-            'Light Gray': '#D3D3D3',
-            'Warm Gray': '#808080',
-            'Taupe': '#483C32',
-            'Khaki': '#F0E68C',
-            
-            # Browns and Beiges
-            'Cream': '#FFFDD0',
-            'Beige': '#F5F5DC',
-            'Cream/Beige': '#F5F5DC',
+            'Powder Blue': '#B0E0E6',
+            'Lavender': '#C07BD9',
+            'Burgundy': '#800020',
+            'Teal': '#008080',
+            'Soft Pink': '#F8B7CD',
+            'Plum': '#8E4585',
+            'Steel Gray': '#71797E',
+            'Emerald': '#50C878',
+            'Heather Gray': '#B7B7B7',
+            'Ice Blue': '#99FFFF',
+            'Pale Pink': '#FADADD',
+            'Coral': '#FF7F50',
+            'Peach': '#FFE5B4',
+            'Golden Yellow': '#FFD700',
+            'Olive Green': '#808000',
             'Camel': '#C19A6B',
-            'Camel (Warm Beige)': '#C19A6B',
-            
-            # Turquoise
-            'Turquoise': '#40E0D0'
+            'Mustard Yellow': '#FFDB58',
+            'Turquoise': '#40E0D0',
+            'Cream': '#F5F5DC',
+            'Mustard': '#FFDB58',
+            'Olive': '#808000',
+            'Taupe': '#D2B1A3',
+            'Navy': '#000080',
+            'Light Gray': '#D3D3D3',
+            'Khaki': '#F0E68C',
+            'Cobalt Blue': '#0047AB',
+            'Emerald Green': '#50C878',
+            'Mint': '#98FF98',
+            'Charcoal': '#36454F',
+            'Warm Gray': '#BEBEBE',
+            'Burnt Orange': '#CC5500',
+            'Eggplant': '#614051',
+            'Warm Beige': '#D8CAB8',
+            'Brick Red': '#AA4A44',
+            'Warm Brown': '#8B5C2D',
+            'Maroon': '#800000',
+            'Sapphire Blue': '#0F52BA',
+            'Silver Gray': '#C0C0C0',
+            'Fuchsia': '#FF00FF',
+            'Ruby Red': '#9B111E',
+            'Magenta': '#FF00FF',
+            'White': '#FFFFFF',
+            'Digital Lavender': '#B57EDC',
+            'Soft Peach': '#FFDAB9',
+            'Honey Gold': '#FFC30B',
+            'Sandstone': '#786D5F',
+            'Washed Black': '#28282B',
+            'Dusty Navy': '#5A5D82',
+            'Dusty Rose': '#DCAE96',
+            'Dusty Teal': '#4C9085',
+            'Faded Graphite': '#474A51',
+            'Slate Blue': '#6A5ACD',
+            'Faded Charcoal': '#595959',
+            'Terracotta': '#E2725B',
+            'Petrol Blue': '#35586C',
+            'Rich Navy': '#021F59',
+            'Graphite Black': '#232B2B',
+            'Saffron': '#F4C430',
+            'Copper': '#B87333',
+            'Indigo': '#4B0082',
+            'Raspberry': '#E30B5C'
         }
         
         # Default color recommendations when Excel file is not available
@@ -145,7 +161,7 @@ class SkinToneAnalyzer:
         return '#CCCCCC'
     
     def rgb_to_lab(self, rgb: np.ndarray) -> np.ndarray:
-        """Convert RGB values to LAB color space using OpenCV."""
+        """Convert RGB values to LAB color space using OpenCV and convert to standard LAB."""
         logging.debug(f"Input RGB values: {rgb}")
         
         # Ensure RGB is in the correct format for OpenCV
@@ -155,14 +171,23 @@ class SkinToneAnalyzer:
         rgb_reshaped = rgb.reshape(1, 1, 3)
         
         # Convert RGB to LAB using OpenCV
-        lab_reshaped = cv2.cvtColor(rgb_reshaped, cv2.COLOR_RGB2LAB)
+        lab_opencv = cv2.cvtColor(rgb_reshaped, cv2.COLOR_RGB2LAB)
         
-        # Extract the LAB values
-        lab = lab_reshaped[0, 0].astype(float)
+        # Extract the OpenCV LAB values
+        lab_opencv_values = lab_opencv[0, 0].astype(float)
         
-        logging.debug(f"LAB values: {lab}")
+        # Convert OpenCV LAB to standard LAB scale
+        # OpenCV: L: 0-255, a: 0-255, b: 0-255
+        # Standard: L: 0-100, a: -128 to +127, b: -128 to +127
+        L_standard = lab_opencv_values[0] * 100 / 255
+        a_standard = lab_opencv_values[1] - 128
+        b_standard = lab_opencv_values[2] - 128
         
-        return lab
+        lab_standard = np.array([L_standard, a_standard, b_standard])
+        
+        logging.debug(f"Standard LAB values: {lab_standard}")
+        
+        return lab_standard
     
     def detect_skin(self, image_rgb: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -375,26 +400,23 @@ class SkinToneAnalyzer:
         # Convert to LAB color space for better analysis
         lab_skin_tone = self.rgb_to_lab(avg_skin_tone)
         
-        # Determine undertone based on a and b values
+        # Determine undertone based on a and b values (using improved thresholds)
         a_value = lab_skin_tone[1]  # Green-Red axis
         b_value = lab_skin_tone[2]  # Blue-Yellow axis
         
-        logging.debug(f"LAB a value (green-red): {a_value}")
-        logging.debug(f"LAB b value (blue-yellow): {b_value}")
+        logging.debug(f"Standard LAB a value (green-red): {a_value}")
+        logging.debug(f"Standard LAB b value (blue-yellow): {b_value}")
         
-        # Define thresholds for undertone determination
-        THRESHOLD = 2.0
-        a_magnitude = abs(a_value)
-        b_magnitude = abs(b_value)
+        # Calculate distance from neutral skin center (a=15, b=20)
+        distance = ((a_value - 15)**2 + (b_value - 20)**2)**0.5
         
-        # Determine undertone
-        if a_magnitude < THRESHOLD and b_magnitude < THRESHOLD:
+        # Determine undertone using improved thresholds
+        if distance < 4:
             undertone = "Neutral"
+        elif a_value > 14 or b_value > 20:
+            undertone = "Warm"
         else:
-            if a_magnitude > b_magnitude:
-                undertone = "Cool" if a_value < 0 else "Warm"
-            else:
-                undertone = "Cool" if b_value < 0 else "Warm"
+            undertone = "Cool"
         
         # Get lightness value (L component in LAB)
         lightness = lab_skin_tone[0]
