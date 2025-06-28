@@ -584,12 +584,22 @@ class SupabaseMainOutfitsGenerator:
         logger.info("📥 Loading enhanced products data from Supabase using pre-filtering...")
         
         try:
-            # Use pre-filtered loading if user data is available
+            # ✅ FIX: Use simpler, more reliable method to avoid timeouts
             if user_data:
-                products_df = self.db.get_products_with_user_filters(user_data)
+                # Extract gender from user data for filtering
+                gender = user_data.get('Gender', '').lower()
+                if gender in ['male', 'female']:
+                    # Use the simpler method with gender filter
+                    products_df = self.db.get_products_simple(gender=gender, limit=3000)
+                    logger.info(f"✅ Loaded {len(products_df)} products for {gender} users using simple method")
+                else:
+                    # Fallback to basic products without gender filter
+                    products_df = self.db.get_products_simple(limit=3000)
+                    logger.info(f"✅ Loaded {len(products_df)} products using simple method (no gender filter)")
             else:
-                # Fallback to chunked loading for backward compatibility
-                products_df = self.db.get_products()
+                # Fallback to basic products loading
+                products_df = self.db.get_products_simple(limit=3000)
+                logger.info(f"✅ Loaded {len(products_df)} products using simple method (no user data)")
             
             if products_df.empty:
                 logger.error("❌ No products data found in Supabase")
@@ -2230,29 +2240,27 @@ class SupabaseMainOutfitsGenerator:
 
             logger.info(f"💾 Saving {len(outfits_data)} outfits to Supabase for user {user_id}")
 
-            # 🚫 FIRST: Completely clear ALL existing outfits for this user (including retry outfits)
-            cleanup_success = self._clear_user_outfits_completely(user_id)
-            if not cleanup_success:
-                logger.error("❌ Failed to clear existing outfits, aborting save")
-                return False
+            # ✅ FIX: Use timestamp-based IDs to avoid conflicts with existing outfits
+            import time
+            timestamp = int(time.time())
             
-            logger.info("✅ Successfully cleared all existing outfits for user")
-            
-            # 🎯 SECOND: Use simple, clean IDs without retry suffixes
+            # 🎯 FIRST: Prepare outfits with unique timestamp-based IDs
             processed_outfits = []
             for i, outfit in enumerate(outfits_data):
-                # Use simple, clean main_outfit_id format
-                clean_id = f"main_{user_id}_{i+1}"
+                # Use timestamp-based ID to avoid conflicts
+                unique_id = f"main_{user_id}_{timestamp}_{i+1}"
                 
                 outfit_copy = outfit.copy()
-                outfit_copy['main_outfit_id'] = clean_id
+                outfit_copy['main_outfit_id'] = unique_id
                 # Ensure rank starts from 1 and is sequential
                 outfit_copy['rank'] = i + 1
+                # Add user_id to each outfit
+                outfit_copy['user_id'] = user_id
                 processed_outfits.append(outfit_copy)
 
-            # 🚀 THIRD: Use batch insert with proper error handling
+            # 🚀 SECOND: Use simple insert since we have unique IDs
             batch_size = 10  # Insert in smaller batches to avoid timeouts
-            total_inserted = 0
+            total_processed = 0
             
             for i in range(0, len(processed_outfits), batch_size):
                 batch = processed_outfits[i:i + batch_size]
@@ -2261,15 +2269,11 @@ class SupabaseMainOutfitsGenerator:
                 try:
                     logger.info(f"📦 Inserting batch {batch_num}: {len(batch)} outfits")
                     
-                    # Convert batch to DataFrame for easier handling
-                    batch_df = pd.DataFrame(batch)
+                    # Use simple insert since we have unique IDs
+                    result = self.db.client.table('user_outfits').insert(batch).execute()
                     
-                    # Insert batch using database method
-                    # Skip deletion for all batches since we already cleared outfits above
-                    success = self.db.save_user_outfits(batch_df, user_id, skip_deletion=True)
-                    
-                    if success:
-                        total_inserted += len(batch)
+                    if result.data:
+                        total_processed += len(batch)
                         logger.info(f"✅ Batch {batch_num} inserted successfully")
                     else:
                         logger.error(f"❌ Batch {batch_num} failed to insert")
@@ -2279,8 +2283,8 @@ class SupabaseMainOutfitsGenerator:
                     logger.error(f"❌ Error inserting batch {batch_num}: {e}")
                     return False
 
-            logger.info(f"✅ Successfully saved {total_inserted}/{len(processed_outfits)} outfits to Supabase")
-            return total_inserted == len(processed_outfits)
+            logger.info(f"✅ Successfully saved {total_processed}/{len(processed_outfits)} outfits to Supabase with unique IDs")
+            return total_processed == len(processed_outfits)
 
         except Exception as e:
             logger.error(f"❌ Error saving outfits to Supabase: {e}")

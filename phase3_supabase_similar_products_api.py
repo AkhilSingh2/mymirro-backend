@@ -229,10 +229,10 @@ class SupabaseEnhancedSimilarProductsGenerator:
         try:
             logger.info(f"🔍 Directly fetching product {product_id} from database...")
             
-            # Query only the specific product
+            # Query only the specific product - use 'id' column which is the actual column name
             result = self.db.client.table('tagged_products').select(
                 'id,title,product_type,gender,primary_style,primary_color,image_url,full_caption,product_embedding,scraped_category,style_category'
-            ).eq('product_id', product_id).execute()
+            ).eq('id', product_id).execute()
             
             if result.data and len(result.data) > 0:
                 product_data = result.data[0]
@@ -246,23 +246,39 @@ class SupabaseEnhancedSimilarProductsGenerator:
             logger.error(f"❌ Error fetching product {product_id} directly: {e}")
             return None
 
-    def load_products_from_supabase(self) -> pd.DataFrame:
-        """Load products data from Supabase database."""
-        try:
-            logger.info("Loading products from Supabase for Phase 3...")
-            
-            # Use a reasonable limit to avoid timeouts
-            products_df = self.db.get_products(limit=5000)  # Use 5000 as a safe limit
-                
-            if not products_df.empty:
-                logger.info(f"✅ Successfully loaded {len(products_df)} products from Supabase")
-                return products_df
-            else:
-                logger.error("❌ No products data available from Supabase")
-                return pd.DataFrame()
-                
-        except Exception as e:
-            logger.error(f"❌ Error loading products from Supabase: {e}")
+    def load_products_from_supabase(self, chunk_size: int = 1000, max_chunks: int = 100) -> pd.DataFrame:
+        """Load all products from Supabase in chunks to avoid timeouts and limits."""
+        import pandas as pd
+        logger.info(f"Loading products from Supabase in chunks of {chunk_size}...")
+        all_products = []
+        offset = 0
+        chunk_num = 0
+        while True:
+            chunk_num += 1
+            if chunk_num > max_chunks:
+                logger.warning(f"Reached max_chunks={max_chunks}, stopping early.")
+                break
+            try:
+                logger.info(f"🔍 Fetching chunk {chunk_num} (offset={offset})...")
+                chunk_df = self.db.get_products(limit=chunk_size, offset=offset)
+                if chunk_df is None or chunk_df.empty:
+                    logger.info(f"No more products found at offset {offset}.")
+                    break
+                all_products.append(chunk_df)
+                logger.info(f"✅ Loaded {len(chunk_df)} products in chunk {chunk_num} (offset={offset})")
+                if len(chunk_df) < chunk_size:
+                    logger.info(f"Last chunk ({chunk_num}) returned less than chunk_size; assuming end of data.")
+                    break
+                offset += chunk_size
+            except Exception as e:
+                logger.error(f"❌ Error loading chunk {chunk_num} at offset {offset}: {e}")
+                break
+        if all_products:
+            products_df = pd.concat(all_products, ignore_index=True)
+            logger.info(f"✅ Successfully loaded {len(products_df)} total products from Supabase in {chunk_num} chunks.")
+            return products_df
+        else:
+            logger.error("❌ No products data available from Supabase after chunked loading.")
             return pd.DataFrame()
     
     def validate_products_data(self, products_df: pd.DataFrame) -> pd.DataFrame:
@@ -339,8 +355,8 @@ class SupabaseEnhancedSimilarProductsGenerator:
         
         logger.info(f"✅ Found source product: {source_product.get('title', 'Unknown')}")
 
-        # 3. Load products for similarity search (with reasonable limit)
-        products_df = self.load_products_from_supabase()
+        # 3. Load products for similarity search (REMOVED LIMIT for better coverage)
+        products_df = self.load_products_from_supabase(limit=None)  # Load all products
         if products_df.empty:
             logger.error("No products available from Supabase")
             return []
@@ -397,8 +413,12 @@ class SupabaseEnhancedSimilarProductsGenerator:
         
         logger.info(f"🔍 Final filtered products: {len(filtered_df)}")
         
-        # 6. Build FAISS indexes on filtered set (by product_type)
-        self.build_faiss_indexes(filtered_df, by_field='product_type')
+        # 6. Build FAISS indexes on filtered set (by product_type) - CACHE THIS
+        if not hasattr(self, 'faiss_indexes') or not self.faiss_indexes:
+            logger.info("🔄 Building FAISS indexes (first time or cache miss)...")
+            self.build_faiss_indexes(filtered_df, by_field='product_type')
+        else:
+            logger.info("✅ Using cached FAISS indexes")
 
         # 7. Generate same-category candidates only (from filtered set)
         candidates = self._generate_same_category_candidates(source_product, filtered_df, user_preferences)
@@ -859,12 +879,28 @@ class SupabaseEnhancedSimilarProductsGenerator:
     def build_faiss_indexes(self, products_df: pd.DataFrame, by_field: str = 'product_type') -> None:
         """Build FAISS indexes for each product_type (instead of wear_type)."""
         import faiss
+        import time
+        start_time = time.time()
+        
         self.faiss_indexes = {}
         self.product_mappings = {}
-        for product_type, group in products_df.groupby(by_field):
+        
+        # Group by product_type and process each group
+        product_types = products_df[by_field].unique()
+        logger.info(f"🔄 Building FAISS indexes for {len(product_types)} product types...")
+        
+        for product_type in product_types:
+            group_start = time.time()
+            group = products_df[products_df[by_field] == product_type].copy()
+            
+            if group.empty:
+                continue
+            
             embeddings = []
             product_indices = []
             valid_products = []
+            
+            # Process embeddings more efficiently
             for idx, row in group.iterrows():
                 if 'product_embedding' in row and row['product_embedding']:
                     try:
@@ -877,6 +913,7 @@ class SupabaseEnhancedSimilarProductsGenerator:
                         valid_products.append(row)
                     except Exception as e:
                         continue
+            
             if embeddings:
                 embeddings = np.vstack(embeddings)
                 embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
@@ -887,7 +924,11 @@ class SupabaseEnhancedSimilarProductsGenerator:
                     'indices': product_indices,
                     'products': pd.DataFrame(valid_products)
                 }
-                logger.info(f"Built FAISS index for {by_field}={product_type}: {len(embeddings)} products indexed")
+                group_time = time.time() - group_start
+                logger.info(f"✅ Built FAISS index for {by_field}={product_type}: {len(embeddings)} products indexed in {group_time:.2f}s")
+        
+        total_time = time.time() - start_time
+        logger.info(f"🎉 FAISS indexing completed in {total_time:.2f}s for {len(self.faiss_indexes)} product types")
 
     def get_embedding_cached(self, text: str, cache_key: str = None, product_id: str = None) -> np.ndarray:
         """Get embedding with caching. Now uses precomputed embeddings from tagged_products table."""

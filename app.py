@@ -1489,14 +1489,28 @@ class ImportDebug(Resource):
 class DebugProducts(Resource):
     @api.doc('debug_list_products')
     def get(self):
-        """List the first 20 product IDs and titles from tagged_products table for debugging."""
+        """List the first 1000 product IDs and titles from tagged_products table for debugging."""
         try:
             db = SupabaseDB()
-            products_df = db.get_products(limit=20)
+            products_df = db.get_products(limit=1000)
             if products_df.empty:
                 return {'success': False, 'products': [], 'message': 'No products found.'}, 200
-            products = products_df[['id', 'title']].fillna('').to_dict(orient='records')
-            return {'success': True, 'products': products, 'count': len(products)}, 200
+            
+            # Check if product 2859 exists
+            product_2859_exists = False
+            if 'id' in products_df.columns:
+                product_ids = products_df['id'].astype(str).tolist()
+                product_2859_exists = '2859' in product_ids
+            
+            # Return first 20 for display, but include the check result
+            products = products_df[['id', 'title']].head(20).fillna('').to_dict(orient='records')
+            return {
+                'success': True, 
+                'products': products, 
+                'count': len(products_df),
+                'product_2859_exists': product_2859_exists,
+                'total_products_checked': len(products_df)
+            }, 200
         except Exception as e:
             return {'success': False, 'error': str(e)}, 500
 
