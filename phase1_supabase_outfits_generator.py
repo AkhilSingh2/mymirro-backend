@@ -2,6 +2,7 @@
 Phase 1: Enhanced Supabase Outfits Generator with Professional Fashion Intelligence
 
 Generates 20 main outfits per user using Supabase database with all enhancements from main generator
+✅ ENHANCED: Now with Phase 2 optimizations + Precomputed embeddings + Same-category filtering
 """
 
 import pandas as pd
@@ -53,20 +54,23 @@ class SupabaseMainOutfitsGenerator:
     """
     Phase 1: Generate and store 20 main outfits per user using Supabase database
     ✅ ENHANCED: Now with Professional Fashion Designer Intelligence + Database Integration
+    ✅ ENHANCED: Now with Phase 2 optimizations + Precomputed embeddings + Same-category filtering
     ✅ COMPLETE: Full feature parity with main generator
     """
+    
+    # ✅ OPTIMIZATION: Class-level model cache to avoid reloading
+    _model_cache = None
+    _model_cache_ready = False
     
     def __init__(self, config: Dict = None):
         """Initialize the Supabase-enabled outfits generator with fashion designer intelligence."""
         self.config = config or self._default_config()
         self.db = get_db()
         
-        # Railway CPU optimization
+        # Railway CPU optimization - delay until needed
         self.is_railway = os.getenv('RAILWAY_ENVIRONMENT') is not None
         if self.is_railway:
-            # Set conservative CPU limits for ML operations
-            for var in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'OPENBLAS_NUM_THREADS']:
-                os.environ[var] = '2'
+            logger.info("🏭 Railway environment detected - will apply CPU optimizations when needed")
         
         # Check for required dependencies
         if not FAISS_AVAILABLE:
@@ -82,13 +86,8 @@ class SupabaseMainOutfitsGenerator:
             logger.error("❌ Database connection failed. Please check your Supabase configuration.")
             raise ConnectionError("Failed to connect to Supabase database")
         
-        # Load model
-        try:
-            self.model = SentenceTransformer(self.config['model_name'])
-            logger.info(f"✅ Model loaded: {self.config['model_name']}")
-        except Exception as e:
-            logger.error(f"❌ Failed to load model: {e}")
-            raise
+        # ✅ OPTIMIZATION: Lazy load model only when needed
+        self.model = None
         
         # 🚀 ENHANCED: Advanced embedding cache with statistics
         self.embedding_cache = {}
@@ -120,6 +119,31 @@ class SupabaseMainOutfitsGenerator:
         else:
             self.why_picked_feature = None
 
+    def _ensure_model_loaded(self):
+        """Lazy load the model only when needed."""
+        if self.model is None:
+            try:
+                if self.is_railway:
+                    logger.info("🔧 Loading model with Railway CPU optimizations")
+                    # Set conservative CPU limits for ML operations
+                    for var in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'OPENBLAS_NUM_THREADS']:
+                        os.environ[var] = '2'
+                
+                # ✅ OPTIMIZATION: Use cached model if available
+                if SupabaseMainOutfitsGenerator._model_cache is not None:
+                    self.model = SupabaseMainOutfitsGenerator._model_cache
+                    logger.info(f"✅ Using cached model: {self.config['model_name']}")
+                else:
+                    self.model = SentenceTransformer(self.config['model_name'])
+                    # Cache the model for future use
+                    SupabaseMainOutfitsGenerator._model_cache = self.model
+                    SupabaseMainOutfitsGenerator._model_cache_ready = True
+                    logger.info(f"✅ Model loaded and cached: {self.config['model_name']}")
+                    
+            except Exception as e:
+                logger.error(f"❌ Failed to load model: {e}")
+                raise
+
     def _default_config(self) -> Dict:
         """Default configuration for the Supabase outfits generator."""
         app_config = get_config()
@@ -148,7 +172,7 @@ class SupabaseMainOutfitsGenerator:
         color_harmony_map = {}
         csv_path = os.path.join(
             'Fashion designer input',
-            'Fashion_Designer_Templates_Simple.xlsx - 1. Color Harmony.csv')
+            'Color Harmony.csv')
         try:
             with open(csv_path, 'r', encoding='utf-8') as f:
                 reader = csv.reader(f)
@@ -156,30 +180,103 @@ class SupabaseMainOutfitsGenerator:
                 for row in reader:
                     if not row or not any(row):
                         continue
-                    if row[0].startswith('BASE COLOR:'):
-                        base_color = row[0].replace(
-                            'BASE COLOR:', '').replace(
-                            '*a color that can have it all*', '').strip()
+                    
+                    # Check for base color headers
+                    if len(row) > 0 and 'BASE COLOR:' in str(row[0]):
+                        base_color = str(row[0]).replace('BASE COLOR:', '').replace('*a color that can have it all*', '').strip()
                         continue
-                    if base_color and len(row) >= 2 and '+' in row[0]:
-                        # Parse color pair and rating
+                    
+                    # Skip header rows
+                    if len(row) > 0 and any(keyword in str(row[0]).lower() for keyword in ['color combination', 'rating', 'notes', 'section']):
+                        continue
+                    
+                    # Parse color combinations
+                    if base_color and len(row) >= 2 and '+' in str(row[0]):
                         try:
-                            pair = row[0].split('+')
-                            if len(pair) == 2:
-                                color1 = base_color.title()
-                                color2 = pair[1].strip().title()
-                                rating = int(
-                                    row[1]) if row[1].strip().isdigit() else None
-                                notes = row[2].strip() if len(row) > 2 else ''
-                                color_harmony_map[(color1, color2)] = {
-                                    'rating': rating, 'notes': notes}
+                            # Parse color pair
+                            color_pair = str(row[0]).strip()
+                            if '+' in color_pair:
+                                parts = color_pair.split('+')
+                                if len(parts) == 2:
+                                    color1 = base_color.title()
+                                    color2 = parts[1].strip().title()
+                                    
+                                    # Parse rating
+                                    rating = None
+                                    if len(row) > 1 and row[1]:
+                                        try:
+                                            rating = int(str(row[1]).strip())
+                                        except ValueError:
+                                            # Try to extract number from text
+                                            import re
+                                            numbers = re.findall(r'\d+', str(row[1]))
+                                            if numbers:
+                                                rating = int(numbers[0])
+                                    
+                                    # Parse notes
+                                    notes = str(row[2]).strip() if len(row) > 2 and row[2] else ""
+                                    
+                                    if rating is not None:
+                                        color_harmony_map[(color1, color2)] = {
+                                            'rating': rating, 
+                                            'notes': notes,
+                                            'base_color': color1,
+                                            'pair_color': color2
+                                        }
                         except Exception as e:
+                            logger.debug(f"Could not parse color combination row: {row}, error: {e}")
                             continue
-            logger.info(
-                f"✅ Loaded {len(color_harmony_map)} color harmony rules from designer CSV")
+                            
+            logger.info(f"✅ Loaded {len(color_harmony_map)} color harmony rules from designer CSV")
+            
+            # Add seasonal rules
+            seasonal_rules = {
+                'spring_summer': [
+                    ('White', 'Blue'), ('Gray', 'Pink'), ('White', 'Yellow'), 
+                    ('Black', 'Sage'), ('Beige', 'Pastels')
+                ],
+                'fall_winter': [
+                    ('Black', 'Deep Red'), ('Navy', 'Emerald Green'), 
+                    ('Brown', 'Cream'), ('Gray', 'Burgundy')
+                ]
+            }
+            
+            # Add special rules
+            special_rules = {
+                'black_safe': True,
+                'white_universal': True,
+                'no_bright_bright': True,
+                'professional_dark_hues': True,
+                'casual_pop_colors': True
+            }
+            
+            color_harmony_map['_seasonal_rules'] = seasonal_rules
+            color_harmony_map['_special_rules'] = special_rules
+            
         except Exception as e:
             logger.warning(f"Could not load color harmony CSV: {e}")
+            # Fallback to basic rules
+            color_harmony_map = self._get_fallback_color_harmony()
+            
         return color_harmony_map
+    
+    def _get_fallback_color_harmony(self) -> dict:
+        """Fallback color harmony rules if CSV loading fails."""
+        return {
+            ('Black', 'White'): {'rating': 6, 'notes': 'Basic contrast'},
+            ('Black', 'Navy'): {'rating': 9, 'notes': 'Elegant'},
+            ('White', 'Blue'): {'rating': 9, 'notes': 'Classic'},
+            ('Navy', 'White'): {'rating': 8, 'notes': 'Rich look'},
+            '_seasonal_rules': {
+                'spring_summer': [('White', 'Blue'), ('Gray', 'Pink')],
+                'fall_winter': [('Black', 'Deep Red'), ('Navy', 'Emerald Green')]
+            },
+            '_special_rules': {
+                'black_safe': True,
+                'white_universal': True,
+                'no_bright_bright': True
+            }
+        }
     
     def _initialize_professional_fashion_intelligence(self):
         """✅ ENHANCED: Initialize all professional fashion intelligence from main generator."""
@@ -217,6 +314,15 @@ class SupabaseMainOutfitsGenerator:
         self.color_harmony = self._initialize_professional_color_harmony()
         self.quick_rules = self._initialize_professional_quick_rules()
         self.body_shape_intelligence = self._initialize_body_shape_intelligence()
+        
+        # ✅ NEW: Load designer body shape rules
+        self.body_shape_rules = self._load_body_shape_rules()
+        
+        # ✅ NEW: Load style mixing rules
+        self.style_mixing_rules = self._load_style_mixing_rules()
+        
+        # ✅ NEW: Load quick styling rules
+        self.quick_styling_rules = self._load_quick_styling_rules()
         
         # ✅ ENHANCED: Seasonal intelligence with cultural context
         self.seasonal_preferences = {
@@ -672,14 +778,44 @@ class SupabaseMainOutfitsGenerator:
 
         return products_df
 
-    def get_embedding_cached(self, text: str, cache_key: str = None) -> np.ndarray:
-        """Get embedding with enhanced caching for better performance."""
+    def get_embedding_cached(self, text: str, cache_key: str = None, product_id: str = None) -> np.ndarray:
+        """Get embedding with enhanced caching for better performance. Now uses precomputed embeddings from tagged_products table."""
         if not cache_key:
             cache_key = text[:100]
         
+        # ✅ ENHANCED: Try to get precomputed embedding from tagged_products table first
+        if product_id:
+            try:
+                # Query the tagged_products table for precomputed embedding
+                result = self.db.client.table('tagged_products').select('product_embedding').eq('id', product_id).execute()
+                
+                if result.data and result.data[0].get('product_embedding'):
+                    embedding_json = result.data[0]['product_embedding']
+                    if isinstance(embedding_json, str):
+                        embedding = np.array(json.loads(embedding_json))
+                    else:
+                        embedding = np.array(embedding_json)
+                    
+                    # Cache the result
+                    if self.config['cache_embeddings']:
+                        self.embedding_cache[cache_key] = embedding
+                        self.cache_stats['size'] += 1
+                        self.cache_stats['hits'] += 1
+                    
+                    logger.debug(f"✅ Retrieved precomputed embedding for product {product_id}")
+                    return embedding
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to get precomputed embedding for product {product_id}: {e}")
+                # Fall back to computing embedding
+        
+        # Check cache first
         if self.config['cache_embeddings'] and cache_key in self.embedding_cache:
             self.cache_stats['hits'] += 1
             return self.embedding_cache[cache_key]
+        
+        # ✅ ENHANCED: Ensure model is loaded before computing embeddings
+        self._ensure_model_loaded()
         
         # Generate embedding
         embedding = self.model.encode([text])[0]
@@ -722,8 +858,8 @@ class SupabaseMainOutfitsGenerator:
         }
 
     def build_faiss_indexes(self, products_df: pd.DataFrame) -> None:
-        """Build FAISS indexes for different wear types using enhanced Supabase data with parallel processing."""
-        logger.info("🔄 Building FAISS indexes for product recommendations...")
+        """Build FAISS indexes for different wear types using enhanced Supabase data with precomputed embeddings."""
+        logger.info("🔄 Building FAISS indexes for product recommendations using precomputed embeddings...")
         
         wear_types = ['Upperwear', 'Bottomwear']
         
@@ -744,38 +880,48 @@ class SupabaseMainOutfitsGenerator:
                     logger.error(f"❌ Error building FAISS index: {e}")
     
     def _build_faiss_index_for_wear_type(self, wear_type: str, wear_products: pd.DataFrame) -> None:
-        """Build FAISS index for a specific wear type with parallel embedding generation."""
+        """Build FAISS index for a specific wear type using precomputed embeddings."""
         if wear_products.empty:
             logger.warning(f"No products found for wear_type: {wear_type}")
             return
         
-        captions = []
+        # ✅ ENHANCED: Use precomputed embeddings from tagged_products table
+        embeddings = []
         product_indices = []
+        valid_products = []
+        
+        logger.info(f"🔄 Loading precomputed embeddings for {len(wear_products)} {wear_type} products...")
         
         for idx, row in wear_products.iterrows():
-            caption = row.get('final_caption', '') or row.get('title', '')
-            if caption.strip():
-                captions.append(caption)
-                product_indices.append(idx)
+            product_id = str(row['id'])
+            
+            try:
+                # Get precomputed embedding from tagged_products table
+                result = self.db.client.table('tagged_products').select('product_embedding').eq('id', product_id).execute()
+                
+                if result.data and result.data[0].get('product_embedding'):
+                    embedding_json = result.data[0]['product_embedding']
+                    if isinstance(embedding_json, str):
+                        embedding = np.array(json.loads(embedding_json))
+                    else:
+                        embedding = np.array(embedding_json)
+                    
+                    embeddings.append(embedding)
+                    product_indices.append(idx)
+                    valid_products.append(row)
+                else:
+                    logger.warning(f"No precomputed embedding found for product {product_id}")
+                    
+            except Exception as e:
+                logger.warning(f"Failed to get embedding for product {product_id}: {e}")
+                continue
         
-        if not captions:
-            logger.warning(f"No valid captions found for wear_type: {wear_type}")
+        if not embeddings:
+            logger.warning(f"No valid embeddings found for wear_type: {wear_type}")
             return
 
-        logger.info(f"🚀 Generating embeddings for {len(captions)} {wear_type} products...")
-
-        # 🚀 PARALLEL: Generate embeddings in batches
-        batch_size = self.config.get('embedding_batch_size', 50)
-        embeddings = []
-        
-        for i in range(0, len(captions), batch_size):
-            batch_captions = captions[i:i + batch_size]
-            
-            # Generate embeddings for batch
-            batch_embeddings = self.model.encode(batch_captions)
-            embeddings.extend(batch_embeddings)
-
         embeddings = np.array(embeddings)
+        logger.info(f"✅ Loaded {len(embeddings)} precomputed embeddings for {wear_type}")
 
         # Build FAISS index
         dimension = embeddings.shape[1]
@@ -789,30 +935,57 @@ class SupabaseMainOutfitsGenerator:
         self.faiss_indexes[wear_type] = index
         self.product_mappings[wear_type] = {
             'indices': product_indices, 
-            'products': wear_products.iloc[[wear_products.index.get_loc(idx) for idx in product_indices]].copy()
+            'products': pd.DataFrame(valid_products)
         }
 
-        logger.info(f"✅ Built FAISS index for {wear_type}: {len(captions)} products indexed")
+        logger.info(f"✅ Built FAISS index for {wear_type}: {len(embeddings)} products indexed")
         
         # Log cache statistics
         cache_stats = self.get_cache_stats()
         logger.info(f"📊 Embedding cache stats: {cache_stats['hit_rate']} hit rate ({cache_stats['hits']} hits, {cache_stats['misses']} misses)")
 
     def filter_products_enhanced(self, products_df: pd.DataFrame, user: Dict, wear_type: str = None) -> pd.DataFrame:
-        """✅ ENHANCED: Enhanced manual filtering on Gender, Fashion Style, and Body Shape."""
+        """✅ ENHANCED: Enhanced manual filtering on Gender, Fashion Style, and Body Shape with seasonal considerations."""
         logger.info(f"Starting enhanced filtering - Initial products: {len(products_df)}")
 
+        # ✅ NEW: Seasonal filtering - exclude winter items during summer
+        winter_keywords = [
+            'sweater', 'pullover', 'hoodie', 'hooded', 'sweatshirt', 'cardigan', 'jumper',
+            'wool', 'woollen', 'knit', 'thermal', 'fleece', 'winter', 'cold', 'warm', 'insulated',
+            'turtleneck', 'turtle neck', 'turtle-neck', 'mock neck', 'high neck', 'cable knit',
+            'chunky', 'thick', 'heavy', 'winter jacket', 'coat', 'blazer', 'jumper',
+            'angora', 'cashmere', 'merino', 'alpaca', 'fuzzy', 'furry', 'thermal',
+            'long sleeve', 'longsleeve', 'full sleeve', 'fullsleeve', 'warm jacket',
+            'winter coat', 'overcoat', 'pea coat', 'duffle coat', 'parka', 'anorak'
+        ]
+        
+        # Filter out winter items - check multiple fields
+        winter_mask = products_df['title'].str.lower().str.contains('|'.join(winter_keywords), na=False)
+        winter_mask |= products_df['scraped_category'].str.lower().str.contains('|'.join(winter_keywords), na=False)
+        winter_mask |= products_df['primary_style'].str.lower().str.contains('|'.join(winter_keywords), na=False)
+        winter_mask |= products_df['style_category'].str.lower().str.contains('|'.join(winter_keywords), na=False)
+        winter_mask |= products_df['product_type'].str.lower().str.contains('|'.join(winter_keywords), na=False)
+        
+        # Also check for winter indicators in the description or other fields
+        if 'description' in products_df.columns:
+            winter_mask |= products_df['description'].str.lower().str.contains('|'.join(winter_keywords), na=False)
+        
+        # Remove winter items
+        products_df = products_df[~winter_mask]
+        logger.info(f"🌞 Removed {winter_mask.sum()} winter items, remaining: {len(products_df)} products")
+
         def match(row):
-            # 1. GENDER FILTERING (SIMPLE - Match gender columns)
+            # 1. GENDER FILTERING (ENHANCED - Women only get female clothes, no unisex)
             user_gender = user.get('Gender', user.get('gender', '')).lower()
             product_gender = row.get('gender', 'Unisex').lower()
 
             if user_gender and product_gender:
-                # Allow same gender products and unisex products
+                # Updated gender filtering logic
                 if user_gender in ['male', 'men']:
                     acceptable_genders = ['men', 'male', 'unisex']
                 elif user_gender in ['female', 'women']:
-                    acceptable_genders = ['women', 'female', 'unisex']
+                    # Women only get female-specific clothes, no unisex
+                    acceptable_genders = ['women', 'female']
                 elif user_gender in ['unisex']:
                     acceptable_genders = ['men', 'male', 'women', 'female', 'unisex']
                 else:
@@ -932,8 +1105,10 @@ class SupabaseMainOutfitsGenerator:
         return filtered_df
 
     def get_semantic_recommendations(self, user_profile: str, wear_type: str, 
-                                   gender_filter: str = None, k: int = 20, user: Dict = None) -> List[Dict]:
-        """✅ ENHANCED: Get semantic recommendations using FAISS with improved diversity and context awareness."""
+                                   gender_filter: str = None, k: int = 20, user: Dict = None,
+                                   target_product_type: str = None, target_style_category: str = None) -> List[Dict]:
+        """✅ ENHANCED: Get semantic recommendations using FAISS with improved diversity and context awareness.
+        Now supports same-category filtering for similar products."""
 
         if wear_type not in self.faiss_indexes:
             logger.warning(f"No FAISS index available for wear_type: {wear_type}")
@@ -967,16 +1142,29 @@ class SupabaseMainOutfitsGenerator:
             product_idx = product_mapping['indices'][faiss_idx]
             product = product_mapping['products'].iloc[faiss_idx]
 
+            # ✅ ENHANCED: Same-category filtering for similar products
+            if target_product_type and target_style_category:
+                product_type = str(product.get('product_type', '')).strip().lower()
+                style_category = str(product.get('style_category', product.get('primary_style', ''))).strip().lower()
+                
+                target_product_type_lower = target_product_type.strip().lower()
+                target_style_category_lower = target_style_category.strip().lower()
+                
+                # Check if product matches the same category and style
+                if product_type != target_product_type_lower or style_category != target_style_category_lower:
+                    continue
+
             # Apply gender filter if specified
             if gender_filter and gender_filter != 'Unisex':
                 product_gender = product.get('gender', 'Unisex').lower()
                 gender_filter_lower = gender_filter.lower()
 
-                # Allow same gender products and unisex products
+                # Updated gender filtering logic - consistent with main filtering
                 if gender_filter_lower in ['male', 'men']:
                     acceptable_genders = ['men', 'male', 'unisex']
                 elif gender_filter_lower in ['female', 'women']:
-                    acceptable_genders = ['women', 'female', 'unisex']
+                    # Women only get female-specific clothes, no unisex
+                    acceptable_genders = ['women', 'female']
                 else:
                     acceptable_genders = [gender_filter_lower, 'unisex']
 
@@ -1053,412 +1241,145 @@ class SupabaseMainOutfitsGenerator:
 
     def score_outfit_enhanced(self, top: pd.Series, bottom: pd.Series, user: Dict, 
                             top_semantic: float, bottom_semantic: float) -> Tuple[float, str]:
-        """Enhanced outfit scoring with basic compatibility check."""
-
-        # First check basic compatibility
-        is_compatible, reason = self._check_basic_outfit_compatibility(
-            top, bottom)
-        if not is_compatible:
-            return 0.0, f"Incompatible: {reason}"
-
+        """✅ ENHANCED: Score outfit using comprehensive designer rule engine."""
         try:
-            # Get confidence scores
-            top_confidence = top.get('confidence_score', 1.0)
-            bottom_confidence = bottom.get('confidence_score', 1.0)
-            avg_confidence = (top_confidence + bottom_confidence) / 2
-
-            # Initialize scoring components with confidence weighting
-            scoring_components = {
-                'semantic_similarity': {
-                    'score': (top_semantic + bottom_semantic) / 2,
-                    'weight': 2.0,
-                    'confidence': avg_confidence
-                },
-                'fit_compatibility': {
-                    'score': self._calculate_fit_compatibility_score(top, user) * top_confidence +
-                    self._calculate_fit_compatibility_score(bottom, user) * bottom_confidence,
-                    'weight': 2.8,
-                    'confidence': avg_confidence
-                },
-                'comfort_metrics': {
-                    'score': self._normalize_comfort_level(top.get('comfort_level', 'Medium')) * top_confidence +
-                    self._normalize_comfort_level(bottom.get('comfort_level', 'Medium')) * bottom_confidence,
-                    'weight': 2.5,
-                    'confidence': avg_confidence
-                },
-                'style_intelligence': {
-                    'score': self._calculate_style_intelligence_score(top, bottom),
-                    'weight': 2.5,
-                    'confidence': avg_confidence
-                },
-                'color_harmony': {
-                    'score': self.calculate_color_harmony_score(
-                        top.get('primary_color', 'Black'),
-                        bottom.get('primary_color', 'Black')
-                    ),
-                    'weight': 2.3,
-                    'confidence': avg_confidence
-                },
-                'quality_metrics': {
-                    'score': self._calculate_quality_metrics_score(top, bottom),
-                    'weight': 2.0,
-                    'confidence': avg_confidence
-                },
-                'occasion_context': {
-                    'score': self._calculate_occasion_appropriateness(top, bottom, user),
-                    'weight': 1.8,
-                    'confidence': avg_confidence
-                },
-                'cultural_relevance': {
-                    'score': self._calculate_cultural_context(top, bottom, user),
-                    'weight': 1.5,
-                    'confidence': avg_confidence
-                },
-                'versatility': {
-                    'score': self._calculate_versatility_score(top, bottom),
-                    'weight': 1.8,
-                    'confidence': avg_confidence
-                },
-                'price_coherence': {
-                    'score': self._calculate_price_coherence(top, bottom),
-                    'weight': 1.5,
-                    'confidence': avg_confidence
-                }
-            }
-
-            # Calculate weighted score with confidence adjustment
-            total_weight = 0
-            weighted_score = 0
-
-            for component, data in scoring_components.items():
-                # Adjust weight by confidence
-                weight = data['weight'] * data['confidence']
-                total_weight += weight
-                weighted_score += data['score'] * weight
-
-            final_score = weighted_score / total_weight if total_weight > 0 else 0
-
-            # Generate explanation with confidence indicators
+            total_score = 0.0
             explanations = []
-            for component, data in scoring_components.items():
-                if data['score'] > 0.7:
-                    confidence_indicator = "✓" if data['confidence'] > 0.9 else "~"
-                    explanations.append(
-                        f"{confidence_indicator} Strong {component.replace('_', ' ').title()}")
-                elif data['score'] < 0.3:
-                    confidence_indicator = "✓" if data['confidence'] > 0.9 else "~"
-                    explanations.append(
-                        f"{confidence_indicator} Weak {component.replace('_', ' ').title()}")
-
-            # Add overall confidence indicator
-            if avg_confidence < 0.7:
-                explanations.append("⚠️ Some attributes have low confidence")
-
-            explanation = self.get_explanation_for_outfit(
-                explanations, scoring_components['color_harmony']['score'])
-
+            
+            # 1. SEMANTIC SIMILARITY (Core AI matching)
+            semantic_score = (top_semantic + bottom_semantic) / 2
+            total_score += semantic_score * self.scoring_weights['semantic_similarity']
+            explanations.append(f"AI style match: {semantic_score:.2f}")
+            
+            # 2. ✅ ENHANCED: Comprehensive Designer Rule Engine
+            rule_scores = self._apply_designer_rule_engine(top, bottom, user)
+            
+            # Apply rule scores with weights
+            rule_weights = {
+                'color_harmony': self.scoring_weights['color_harmony'],
+                'body_shape': self.scoring_weights['fit_compatibility'],
+                'style_mixing': self.scoring_weights['style_intelligence'],
+                'quick_rules': self.scoring_weights['quality_metrics'],
+                'fit_balance': self.scoring_weights['fit_compatibility'],
+                'silhouette': self.scoring_weights['style_intelligence'],
+                'accessories': self.scoring_weights['quality_metrics'],
+                'seasonal': self.scoring_weights['occasion_context'],
+                'cultural': self.scoring_weights['cultural_relevance'],
+                'professional': self.scoring_weights['occasion_context']
+            }
+            
+            for rule_type, score in rule_scores.items():
+                if rule_type in rule_weights:
+                    weighted_score = score * rule_weights[rule_type]
+                    total_score += weighted_score
+                    if score > 6.0:  # Only mention high-scoring rules
+                        explanations.append(f"{rule_type.replace('_', ' ').title()}: {score:.2f}")
+            
+            # 3. Additional scoring factors
+            # Fit Compatibility (Enhanced)
+            fit_score = self._calculate_fit_compatibility_score(top, user) + self._calculate_fit_compatibility_score(bottom, user)
+            fit_score /= 2
+            total_score += fit_score * self.scoring_weights['fit_compatibility']
+            explanations.append(f"Fit compatibility: {fit_score:.2f}")
+            
+            # Quality Metrics
+            quality_score = self._calculate_quality_metrics_score(top, bottom)
+            total_score += quality_score * self.scoring_weights['quality_metrics']
+            explanations.append(f"Quality: {quality_score:.2f}")
+            
+            # Price Coherence
+            price_score = self._calculate_price_coherence(top, bottom)
+            total_score += price_score * self.scoring_weights['price_coherence']
+            explanations.append(f"Price harmony: {price_score:.2f}")
+            
+            # Versatility Score
+            versatility_score = self._calculate_versatility_score(top, bottom)
+            total_score += versatility_score * self.scoring_weights['versatility_score']
+            explanations.append(f"Versatility: {versatility_score:.2f}")
+            
+            # Trend Relevance
+            trend_score = self._calculate_trend_relevance_score(top, bottom)
+            total_score += trend_score * self.scoring_weights['trend_relevance']
+            explanations.append(f"Trend relevance: {trend_score:.2f}")
+            
+            # Normalize final score
+            final_score = min(10.0, max(0.0, total_score / sum(self.scoring_weights.values())))
+            
+            # Generate comprehensive explanation with rule insights
+            explanation = self._generate_enhanced_explanation(explanations, final_score, rule_scores, top, bottom, user)
+            
             return final_score, explanation
-
+            
         except Exception as e:
-            logger.error(f"Error in outfit scoring: {str(e)}")
-            return 0.5, "Error in scoring, using default score"
-
-    def _calculate_style_intelligence_score(self, top: pd.Series, bottom: pd.Series) -> float:
-        """✅ ENHANCED: Calculate style intelligence score using professional rules."""
-        top_style = top.get('enhanced_primary_style', top.get('primary_style', ''))
-        bottom_style = bottom.get('enhanced_primary_style', bottom.get('primary_style', ''))
-
-        # Get formality levels
-        top_formality = self.style_formality.get(top_style, 5)
-        bottom_formality = self.style_formality.get(bottom_style, 5)
-
-        # Check formality balance
-        formality_diff = abs(top_formality - bottom_formality)
-        if formality_diff > 3:  # Too much difference in formality
-            return 0.4
-
-        # Style compatibility check
-        style_compatibility = {
-            'Streetwear': ['Streetwear', 'Casual', 'Contemporary', 'Activewear', 'Athleisure'],
-            'Athleisure': ['Athleisure', 'Activewear', 'Streetwear', 'Casual', 'Contemporary'],
-            'Contemporary': ['Contemporary', 'Business Casual', 'Smart Casual', 'Casual'],
-            'Business': ['Business', 'Business Formal', 'Business Casual', 'Professional'],
-            'Formal': ['Formal', 'Business Formal', 'Evening Formal', 'Ultra Formal']
-        }
-
-        top_compatibility = style_compatibility.get(top_style, [top_style])
-        
-        if bottom_style in top_compatibility:
-            return 0.8
-        else:
-            return 0.5
-
-    def _calculate_price_coherence(self, top: pd.Series, bottom: pd.Series) -> float:
-        """✅ ENHANCED: Calculate price coherence score with smart thresholds."""
-        top_price = float(top.get('price', 0))
-        bottom_price = float(bottom.get('price', 0))
-
-        if not top_price or not bottom_price:
-            return 0.5
-
-        # Calculate price ratio
-        price_ratio = max(top_price, bottom_price) / min(top_price, bottom_price)
-
-        # Define price coherence thresholds
-        if price_ratio <= 1.2:  # Very close prices
-            return 1.0
-        elif price_ratio <= 1.5:  # Slightly different
-            return 0.9
-        elif price_ratio <= 2.0:  # Moderately different
-            return 0.7
-        elif price_ratio <= 3.0:  # Significantly different
-            return 0.5
-        else:  # Very different
-            return 0.3
-
-    def _calculate_fit_compatibility_score(
-            self, product: pd.Series, user: Dict) -> float:
-        """✅ NEW: Calculate fit compatibility score using professional intelligence."""
-        user_body_shape = self.map_user_body_shape_to_designer(
-            user.get('Body Shape', ''), user.get('Gender', '')
-        )
-        user_gender = user.get('Gender', '').strip().lower()
-
-        if not user_body_shape or not user_gender:
-            return 0.5
-
-        gender_key = 'male' if user_gender in ['male', 'men'] else 'female'
-
-        if gender_key not in self.body_shape_intelligence or \
-           user_body_shape not in self.body_shape_intelligence[gender_key]:
-            return 0.5
-
-        body_rules = self.body_shape_intelligence[gender_key][user_body_shape]
-        base_multiplier = body_rules.get('score_multiplier', 0.7)
-
-        # Analyze product fit against professional guidance
-        product_fit = product.get('fit_analysis', '')
-        llava_fit = product.get('llava_fit_type', '')
-        product_title = product.get('title', '')
-
-        fit_text = f"{product_fit} {llava_fit} {product_title}".lower()
-
-        if product.get('wear_type', '') == 'Upperwear':
-            best_guidance = body_rules.get('best_tops', '').lower()
-        else:
-            best_guidance = body_rules.get('best_bottoms', '').lower()
-
-        # Calculate match score
-        match_score = 0.5
-        if fit_text and best_guidance:
-            guidance_words = [
-                word for word in best_guidance.split() if len(word) > 3]
-            matches = sum(1 for word in guidance_words if word in fit_text)
-            if guidance_words:
-                match_score = min(
-                    0.3 + (matches / len(guidance_words)) * 0.7, 1.0)
-
-        return match_score * base_multiplier
-
-    def _normalize_comfort_level(self, comfort_level: str) -> float:
-        """Convert comfort level to a numerical scale."""
-        comfort_levels = {
-            'Very Comfortable': 1.0,
-            'Moderately Comfortable': 0.8,
-            'Somewhat Comfortable': 0.6,
-            'Not Comfortable': 0.4,
-            'Very Uncomfortable': 0.2
-        }
-        return comfort_levels.get(comfort_level, 0.5)
-
-    def _calculate_quality_metrics_score(
-            self, top: pd.Series, bottom: pd.Series) -> float:
-        """✅ ENHANCED: Calculate quality metrics score using professional standards."""
-        quality_indicators = [
-            top.get('quality_indicator1', ''),
-            top.get('quality_indicator2', ''),
-            bottom.get('quality_indicator1', ''),
-            bottom.get('quality_indicator2', '')
-        ]
-
-        # Calculate base quality score
-        quality_scores = [
-            self._calculate_quality_indicator_score(indicator)
-            for indicator in quality_indicators
-            if indicator
-        ]
-
-        if not quality_scores:
-            return 0.5
-
-        base_score = sum(quality_scores) / len(quality_scores)
-
-        # Apply additional quality checks
-        durability_scores = [
-            self._normalize_durability_level(
-                top.get(
-                    'durability_level',
-                    'Medium')),
-            self._normalize_durability_level(
-                bottom.get(
-                    'durability_level',
-                    'Medium'))]
-
-        durability_score = sum(durability_scores) / len(durability_scores)
-
-        # Combine scores with weights
-        final_score = (base_score * 0.7) + (durability_score * 0.3)
-
-        return min(final_score, 1.0)
-
-    def _normalize_durability_level(self, durability_level: str) -> float:
-        """Convert durability level to a numerical score."""
-        durability_levels = {
-            'Very High': 1.0,
-            'High': 0.8,
-            'Medium': 0.6,
-            'Low': 0.4,
-            'Very Low': 0.2
-        }
-        return durability_levels.get(durability_level, 0.5)
-
-    def _calculate_quality_indicator_score(self, indicator: str) -> float:
-        """✅ NEW: Calculate quality indicator score using professional intelligence."""
-        quality_thresholds = {
-            'High': 1.0,
-            'Medium': 0.8,
-            'Low': 0.6,
-            'Poor': 0.4,
-            'Very Poor': 0.2
-        }
-        for threshold, score in quality_thresholds.items():
-            if threshold in indicator:
-                return score
-        return 0.5
-
-    def _calculate_occasion_appropriateness(
-            self,
-            top: pd.Series,
-            bottom: pd.Series,
-            user: Dict) -> float:
-        """Enhanced occasion matching logic."""
-        top_occasion = top.get('enhanced_occasion', top.get('occasion', ''))
-        bottom_occasion = bottom.get(
-            'enhanced_occasion', bottom.get(
-                'occasion', ''))
-        user_occasion = user.get('occasion_preference', 'Daily Activities')
-
-        # Both match user preference
-        if top_occasion == user_occasion and bottom_occasion == user_occasion:
-            return 1.0
-
-        # One matches user preference
-        if top_occasion == user_occasion or bottom_occasion == user_occasion:
-            return 0.8
-
-        # Both same occasion (but not user's)
-        if top_occasion == bottom_occasion:
-            return 0.7
-
-        # Different occasions
-        return 0.5
-
-    def _calculate_cultural_context(
-            self,
-            top: pd.Series,
-            bottom: pd.Series,
-            user: Dict) -> float:
-        """✅ NEW: Calculate cultural context score (Indian skin tone awareness)."""
-        score = 0.5  # Base score
-
-        # Get current season for cultural favorites
-        import datetime
-        month = datetime.datetime.now().month
-
-        if month in [3, 4, 5]:
-            season = 'Spring'
-        elif month in [6, 7, 8]:
-            season = 'Summer'
-        elif month in [9, 10, 11]:
-            season = 'Fall'
-        else:
-            season = 'Winter'
-
-        cultural_favorites = self.seasonal_preferences[season].get(
-            'cultural_favorites', [])
-
-        # Check if colors are culturally favorable
-        top_color = top.get('primary_color', '')
-        bottom_color = bottom.get('primary_color', '')
-
-        if top_color in cultural_favorites:
-            score += 0.2
-        if bottom_color in cultural_favorites:
-            score += 0.2
-
-        # Special cultural awareness from designer inputs
-        # Olive Green is "very flattering on Indian skin"
-        if 'Olive Green' in [top_color, bottom_color]:
-            score += 0.3
-
-        # Avoid combinations that "may not work for Indian skin tones"
-        if top_color == 'Black' and bottom_color == 'Bright Red':
-            score -= 0.3
-        if bottom_color == 'Black' and top_color == 'Bright Red':
-            score -= 0.3
-
-        return min(max(score, 0.0), 1.0)
-
-    def _calculate_versatility_score(
-            self,
-            top: pd.Series,
-            bottom: pd.Series) -> float:
-        """✅ ENHANCED: Calculate versatility score using professional metrics."""
-        # Get versatility metrics
-        top_versatility = top.get('versatility_analysis', '')
-        bottom_versatility = bottom.get('versatility_analysis', '')
-
-        # Calculate base versatility
-        base_score = 0.5
-        if top_versatility and bottom_versatility:
-            top_versatility_list = [
-                word for word in top_versatility.split() if word.isalpha()]
-            bottom_versatility_list = [
-                word for word in bottom_versatility.split() if word.isalpha()]
-
-            if top_versatility_list and bottom_versatility_list:
-                common_words = set(top_versatility_list) & set(
-                    bottom_versatility_list)
-                if common_words:
-                    base_score = 0.5 + (len(common_words) * 0.1)
-
-        # Apply style versatility rules
-        top_style = top.get('enhanced_primary_style', '')
-        bottom_style = bottom.get('enhanced_primary_style', '')
-
-        # Check for versatile style combinations
-        versatile_combinations = [
-            ('Casual', 'Smart Casual'),
-            ('Business Casual', 'Contemporary'),
-            ('Contemporary', 'Casual'),
-            ('Smart Casual', 'Business Casual')
-        ]
-
-        for style1, style2 in versatile_combinations:
-            if (top_style == style1 and bottom_style == style2) or \
-               (top_style == style2 and bottom_style == style1):
-                base_score *= 1.2
-                break
-
-        # Check for color versatility
-        top_color = top.get('primary_color', '')
-        bottom_color = bottom.get('primary_color', '')
-
-        neutral_colors = ['Black', 'White', 'Gray', 'Navy', 'Beige']
-        if top_color in neutral_colors or bottom_color in neutral_colors:
-            base_score *= 1.1
-
-        return min(base_score, 1.0)
+            logger.error(f"❌ Error scoring outfit: {e}")
+            return 5.0, "Standard outfit combination"
+    
+    def _generate_enhanced_explanation(self, explanations: List[str], final_score: float, 
+                                     rule_scores: Dict[str, float], top: pd.Series, bottom: pd.Series, user: Dict) -> str:
+        """Generate enhanced explanation using rule engine insights."""
+        try:
+            # Get top performing rules
+            top_rules = sorted(rule_scores.items(), key=lambda x: x[1], reverse=True)[:3]
+            
+            # Get rule-specific insights
+            insights = []
+            
+            # Color harmony insight
+            if rule_scores.get('color_harmony', 0) > 7.0:
+                top_color = self._extract_color(top).title()
+                bottom_color = self._extract_color(bottom).title()
+                color_pair = (bottom_color, top_color)
+                if color_pair in self.color_harmony_map:
+                    rule = self.color_harmony_map[color_pair]
+                    insights.append(f"Professional color pairing: {rule.get('notes', '')}")
+            
+            # Body shape insight
+            if rule_scores.get('body_shape', 0) > 7.0:
+                body_shape = user.get('Body Shape', '').lower()
+                if body_shape:
+                    insights.append(f"Perfect for {body_shape} body shape")
+            
+            # Style mixing insight
+            if rule_scores.get('style_mixing', 0) > 7.0:
+                insights.append("Excellent style balance")
+            
+            # Quick rules insight
+            if rule_scores.get('quick_rules', 0) > 7.0:
+                insights.append("Follows professional styling rules")
+            
+            # Seasonal insight
+            if rule_scores.get('seasonal', 0) > 7.0:
+                import datetime
+                month = datetime.datetime.now().month
+                season = "Spring/Summer" if month in [3, 4, 5, 6] else "Fall/Winter"
+                insights.append(f"Perfect for {season}")
+            
+            # Cultural insight
+            if rule_scores.get('cultural', 0) > 7.0:
+                insights.append("Culturally appropriate styling")
+            
+            # Professional insight
+            if rule_scores.get('professional', 0) > 7.0:
+                insights.append("Professional setting appropriate")
+            
+            # Combine explanations
+            base_explanation = f"Outfit score: {final_score:.1f}/10. "
+            
+            if insights:
+                base_explanation += " ".join(insights[:2])  # Limit to 2 insights
+            else:
+                # Fallback to rule scores
+                top_rule = top_rules[0] if top_rules else None
+                if top_rule and top_rule[1] > 6.0:
+                    base_explanation += f"Strong {top_rule[0].replace('_', ' ')} compatibility."
+                else:
+                    base_explanation += "Stylish combination following professional fashion guidelines."
+            
+            return base_explanation
+            
+        except Exception as e:
+            logger.error(f"❌ Error generating enhanced explanation: {e}")
+            return f"Professional outfit combination with score {final_score:.1f}/10"
 
     def generate_main_outfits_for_user(self, user_id: int) -> List[Dict]:
         """✅ ENHANCED: Generate 20 main outfits for a user using enhanced Supabase data."""
@@ -1502,54 +1423,66 @@ class SupabaseMainOutfitsGenerator:
             return []
     
     def _get_user_style_preferences(self, user_data: Dict) -> List[str]:
-        """Get user's style preferences for proper distribution."""
+        """Get user's ACTUAL style preferences from their Fashion Style selection only."""
+        import json
         styles = []
         
-        # ✅ FIX: Extract fashion style from user data properly
+        # Helper to parse possible JSON array or comma-separated string
+        def parse_styles(val):
+            if not val:
+                return []
+            if isinstance(val, list):
+                return [s.lower().strip() for s in val if s]
+            if isinstance(val, str):
+                v = val.strip()
+                if v.startswith('[') and v.endswith(']'):
+                    try:
+                        arr = json.loads(v)
+                        if isinstance(arr, list):
+                            return [s.lower().strip() for s in arr if s]
+                    except Exception:
+                        pass
+                # fallback: comma-separated
+                return [s.lower().strip() for s in v.split(',') if s.strip()]
+            return []
+        
+        # ✅ FIX: Use ONLY the Fashion Style field as the source of truth
+        # The Fashion Style field contains what the user actually selected
         fashion_style = user_data.get('Fashion Style', '')
-        
         if fashion_style:
-            # Handle JSON array format
-            if isinstance(fashion_style, str) and fashion_style.startswith('[') and fashion_style.endswith(']'):
-                try:
-                    import json
-                    style_list = json.loads(fashion_style)
-                    if isinstance(style_list, list):
-                        styles = [style.lower().strip() for style in style_list if style]
-                except:
-                    styles = [fashion_style.lower().strip()]
+            styles = parse_styles(fashion_style)
+        
+        # ✅ CRITICAL FIX: Only check apparel preferences if the user actually selected those styles
+        # Don't automatically add styles just because apparel preferences exist
+        # The apparel preferences are just product categories within the selected styles
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_styles = []
+        for style in styles:
+            if style not in seen and style:
+                seen.add(style)
+                unique_styles.append(style)
+        
+        # 4. If no styles found, use fallback based on occasion
+        if not unique_styles:
+            occasion = user_data.get('occasion_preference', '').lower()
+            if 'work' in occasion or 'office' in occasion or 'professional' in occasion:
+                unique_styles = ['business casual']
+            elif 'gym' in occasion or 'sport' in occasion or 'active' in occasion:
+                unique_styles = ['athleisure']
             else:
-                # Handle comma-separated string
-                styles = [style.lower().strip() for style in str(fashion_style).split(',') if style.strip()]
+                unique_styles = ['streetwear']
         
-        # ✅ FIX: Also check apparel preferences as backup
-        if not styles:
-            if user_data.get('Apparel Pref Business Casual', False):
-                styles.append('business casual')
-            if user_data.get('Apparel Pref Streetwear', False):
-                styles.append('streetwear')
-            if user_data.get('Apparel Pref Athleisure', False):
-                styles.append('athleisure')
-        
-        # ✅ FIX: If still no styles, use a default based on user's data
-        if not styles:
-            # Try to infer from other user data
-            if user_data.get('occasion_preference', '').lower() in ['work', 'office', 'professional']:
-                styles = ['business casual']
-            elif user_data.get('occasion_preference', '').lower() in ['gym', 'sport', 'active']:
-                styles = ['athleisure']
-            else:
-                styles = ['streetwear']  # Default to streetwear
-        
-        logger.info(f"🎨 User fashion styles: {styles}")
-        return styles
+        logger.info(f"🎨 User's actual style preferences: {unique_styles}")
+        return unique_styles
     
     def _generate_diverse_outfits_with_style_distribution(self, 
                                                         products_df: pd.DataFrame, 
                                                         user_data: Dict, 
                                                         target_outfits: int,
                                                         user_styles: List[str]) -> List[Dict]:
-        """Generate diverse outfits with proper style distribution and no duplicate products."""
+        """Generate diverse outfits with proper distribution across user's selected styles."""
         try:
             outfits = []
             used_top_ids = set()
@@ -1579,7 +1512,7 @@ class SupabaseMainOutfitsGenerator:
                     style_products = self._filter_products_by_style_fallback(products_df, style)
                     if style_products.empty:
                         logger.error(f"❌ No products available for style: {style} even with fallback")
-                    continue
+                        continue
                 
                 # Generate outfits for this style
                 style_outfits = self._generate_style_specific_outfits(
@@ -1714,109 +1647,68 @@ class SupabaseMainOutfitsGenerator:
             return []
     
     def _filter_products_by_style(self, products_df: pd.DataFrame, target_style: str) -> pd.DataFrame:
-        """Filter products by style with strict matching to user's fashion style preference."""
+        """Filter products by style with intelligent matching that respects multi-category products."""
         try:
             if products_df.empty:
                 return pd.DataFrame()
             
-            # ✅ FIX: More precise style mapping for exact matching
-            style_mappings = {
-                'business casual': ['business casual', 'business', 'casual', 'professional', 'office', 'work', 'smart casual'],
-                'streetwear': ['streetwear', 'street', 'urban', 'contemporary', 'modern', 'hip-hop', 'urban style', 'edgy'],
-                'athleisure': ['athleisure', 'active', 'sport', 'athletic', 'performance', 'gym', 'workout', 'sporty'],
-                'casual': ['casual', 'relaxed', 'everyday', 'comfortable', 'informal'],
-                'formal': ['formal', 'elegant', 'sophisticated', 'business formal', 'evening formal'],
-                'contemporary': ['contemporary', 'modern', 'current', 'trendy', 'fashion-forward'],
-                'vintage': ['vintage', 'retro', 'classic', 'heritage', 'nostalgic'],
-                'bohemian': ['bohemian', 'boho', 'free-spirited', 'artistic', 'eclectic'],
-                'minimalist': ['minimalist', 'minimal', 'simple', 'clean', 'essential']
-            }
+            target_style_lower = target_style.lower()
             
-            # Get keywords for the target style
-            style_keywords = style_mappings.get(target_style.lower(), [target_style.lower()])
+            # ✅ ADDITIONAL SEASONAL FILTER: Remove winter items that might have slipped through
+            winter_keywords = [
+                'sweater', 'pullover', 'hoodie', 'hooded', 'sweatshirt', 'cardigan', 'jumper',
+                'wool', 'woollen', 'knit', 'thermal', 'fleece', 'winter', 'cold', 'warm', 'insulated',
+                'turtleneck', 'turtle neck', 'turtle-neck', 'mock neck', 'high neck', 'cable knit',
+                'chunky', 'thick', 'heavy', 'winter jacket', 'coat', 'blazer', 'jumper',
+                'angora', 'cashmere', 'merino', 'alpaca', 'fuzzy', 'furry', 'thermal',
+                'long sleeve', 'longsleeve', 'full sleeve', 'fullsleeve', 'warm jacket',
+                'winter coat', 'overcoat', 'pea coat', 'duffle coat', 'parka', 'anorak'
+            ]
             
-            # ✅ FIX: More strict filtering using multiple fields
-            filtered_products = products_df[
-                # Check primary_style field
-                products_df['primary_style'].str.contains('|'.join(style_keywords), case=False, na=False) |
-                # Check full_caption field
-                products_df['full_caption'].str.contains('|'.join(style_keywords), case=False, na=False) |
-                # Check title field for style keywords
-                products_df['title'].str.contains('|'.join(style_keywords), case=False, na=False) |
-                # Check category field
-                products_df['category'].str.contains('|'.join(style_keywords), case=False, na=False)
-            ].copy()
+            # Filter out winter items
+            winter_mask = products_df['title'].str.lower().str.contains('|'.join(winter_keywords), na=False)
+            winter_mask |= products_df['scraped_category'].str.lower().str.contains('|'.join(winter_keywords), na=False)
+            winter_mask |= products_df['primary_style'].str.lower().str.contains('|'.join(winter_keywords), na=False)
+            winter_mask |= products_df['style_category'].str.lower().str.contains('|'.join(winter_keywords), na=False)
+            winter_mask |= products_df['product_type'].str.lower().str.contains('|'.join(winter_keywords), na=False)
             
-            # ✅ FIX: Additional validation - ensure wear type is correct
-            if target_style.lower() == 'business casual':
-                # Business casual should not include very casual items like t-shirts for tops
-                filtered_products = filtered_products[
-                    ~((filtered_products['wear_type'] == 'Upperwear') & 
-                      (filtered_products['title'].str.contains('t-shirt|tshirt|tee', case=False, na=False)))
-                ]
+            # Remove winter items
+            products_df = products_df[~winter_mask]
+            logger.info(f"🌞 Style filter: Removed {winter_mask.sum()} winter items for {target_style}")
             
-            elif target_style.lower() == 'streetwear':
-                # Streetwear should be more casual and urban
-                filtered_products = filtered_products[
-                    ~((filtered_products['wear_type'] == 'Upperwear') & 
-                      (filtered_products['title'].str.contains('formal|business|office', case=False, na=False)))
-                ]
+            # ✅ PRACTICAL APPROACH: Use the actual style fields from the database
+            # Check the three main style fields in order of importance
+            style_matches = []
             
-            elif target_style.lower() == 'athleisure':
-                # ✅ FIX: Much more inclusive athleisure filtering based on product analysis
-                # Found 679 joggers, 548 joggers in product_type, 434 leggings, etc.
-                athleisure_keywords = [
-                    'sport', 'athletic', 'active', 'gym', 'workout', 'performance', 
-                    'training', 'fitness', 'exercise', 'jogger', 'track', 'sweat', 
-                    'hoodie', 'legging', 'sports', 'athleisure', 'joggers', 'leggings',
-                    'training', 'fitness', 'exercise', 'performance', 'gym', 'workout',
-                    'sporty', 'athletic', 'active', 'casual sport', 'sport casual'
-                ]
-                
-                # Check multiple fields with broader matching
-                filtered_products = products_df[
-                    # Check primary_style field
-                    products_df['primary_style'].str.contains('|'.join(athleisure_keywords), case=False, na=False) |
-                    # Check full_caption field (found 2659 products here)
-                    products_df['full_caption'].str.contains('|'.join(athleisure_keywords), case=False, na=False) |
-                    # Check title field (found 1752 products here)
-                    products_df['title'].str.contains('|'.join(athleisure_keywords), case=False, na=False) |
-                    # Check category field (found 3115 products here)
-                    products_df['category'].str.contains('|'.join(athleisure_keywords), case=False, na=False) |
-                    # Check product_type field (found 548 joggers + 434 leggings)
-                    products_df['product_type'].str.contains('jogger|legging|sport|athletic', case=False, na=False) |
-                    # Check style_subcategory field
-                    products_df['style_subcategory'].str.contains('|'.join(athleisure_keywords), case=False, na=False) |
-                    # Check primary_occasion field for active/sport occasions
-                    products_df['primary_occasion'].str.contains('sport|active|gym|workout|training|fitness', case=False, na=False) |
-                    # Check activity_level field
-                    products_df['activity_level'].str.contains('high|moderate', case=False, na=False) |
-                    # Check venue_type field for gym/sport venues
-                    products_df['venue_type'].str.contains('gym|sport|fitness|workout', case=False, na=False)
-                ].copy()
-                
-                # Additional filtering for specific product types that are clearly athleisure
-                athleisure_product_types = ['joggers', 'leggings', 'sports bra', 'athletic shorts', 'track pants']
-                athleisure_by_type = products_df[
-                    products_df['product_type'].isin(athleisure_product_types)
-                ].copy()
-                
-                # Combine both filtered results
-                filtered_products = pd.concat([filtered_products, athleisure_by_type]).drop_duplicates(subset=['id'])
-                
-                # Remove any products that are clearly NOT athleisure (formal wear)
-                filtered_products = filtered_products[
-                    ~((filtered_products['wear_type'] == 'Upperwear') & 
-                      (filtered_products['title'].str.contains('formal|business|office|dress|blazer|suit', case=False, na=False)))
-                ]
-                
-                # Remove any products that are clearly NOT athleisure (formal bottoms)
-                filtered_products = filtered_products[
-                    ~((filtered_products['wear_type'] == 'Bottomwear') & 
-                      (filtered_products['title'].str.contains('formal|business|office|dress|skirt|trousers', case=False, na=False)))
-                ]
+            # 1. Check primary_style_category (most important)
+            primary_matches = products_df[
+                products_df['primary_style_category'].str.contains(target_style_lower, case=False, na=False)
+            ]
+            style_matches.append(primary_matches)
             
-            logger.info(f"🎨 Found {len(filtered_products)} products for style '{target_style}' using strict filtering")
+            # 2. Check style_category 
+            style_matches.append(products_df[
+                products_df['style_category'].str.contains(target_style_lower, case=False, na=False)
+            ])
+            
+            # 3. Check primary_style
+            style_matches.append(products_df[
+                products_df['primary_style'].str.contains(target_style_lower, case=False, na=False)
+            ])
+            
+            # Combine all matches and remove duplicates
+            if style_matches:
+                filtered_products = pd.concat(style_matches, ignore_index=True).drop_duplicates(subset=['id'])
+            else:
+                filtered_products = pd.DataFrame()
+            
+            logger.info(f"🎨 Found {len(filtered_products)} products for style '{target_style}' using intelligent filtering")
+            
+            # Debug: Log some sample products to verify filtering
+            if not filtered_products.empty:
+                sample_products = filtered_products.head(3)
+                for _, product in sample_products.iterrows():
+                    logger.info(f"  ✅ Sample: {product.get('title', 'N/A')} | Primary Style: {product.get('primary_style_category', 'N/A')} | Style: {product.get('style_category', 'N/A')} | ID: {product.get('id', 'N/A')}")
             
             return filtered_products
             
@@ -1945,8 +1837,8 @@ class SupabaseMainOutfitsGenerator:
                 'bottom_title': str(bottom.get('title', '')),
                 'top_color': top_color,
                 'bottom_color': bottom_color,
-                'top_style': str(top.get('primary_style', '')),
-                'bottom_style': str(bottom.get('primary_style', '')),
+                'top_style': str(style).title(),  # Use user's selected style
+                'bottom_style': str(style).title(),  # Use user's selected style
                 'top_price': float(top.get('price', 0)),
                 'bottom_price': float(bottom.get('price', 0)),
                 'top_image': str(top.get('image_url', '')),
@@ -3374,25 +3266,1076 @@ class SupabaseMainOutfitsGenerator:
         full_caption = str(product.get('full_caption', '')).lower()
         return (style_keyword in primary_style) or (style_keyword in full_caption)
 
+    def _load_body_shape_rules(self) -> Dict:
+        """Load body shape styling rules from designer CSV files."""
+        body_shape_rules = {
+            'male': self._load_male_body_shape_rules(),
+            'female': self._load_female_body_shape_rules()
+        }
+        logger.info(f"✅ Loaded body shape rules for male and female")
+        return body_shape_rules
+    
+    def _load_male_body_shape_rules(self) -> Dict:
+        """Load male body shape rules from CSV."""
+        import csv
+        import os
+        
+        male_rules = {}
+        csv_path = os.path.join('Fashion designer input', 'Body Shape - male.csv')
+        
+        try:
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            # Parse the content by body shape sections
+            sections = content.split('\n\n')
+            current_shape = None
+            
+            for section in sections:
+                lines = section.strip().split('\n')
+                if not lines:
+                    continue
+                    
+                # Check if this is a body shape header
+                if any(shape in lines[0].upper() for shape in ['HOURGLASS', 'RECTANGLE', 'PEAR', 'APPLE', 'TRIANGLE', 'OVAL']):
+                    current_shape = lines[0].replace('BODY SHAPE', '').strip()
+                    male_rules[current_shape.lower()] = {}
+                    continue
+                
+                # Parse rules for current shape
+                if current_shape and current_shape.lower() in male_rules:
+                    for line in lines:
+                        if ':' in line and not line.startswith('BODY SHAPE'):
+                            parts = line.split(':', 1)
+                            if len(parts) == 2:
+                                key = parts[0].strip().lower().replace(' ', '_')
+                                value = parts[1].strip().strip('"')
+                                male_rules[current_shape.lower()][key] = value
+            
+            # Add general fit rules
+            general_rules = {}
+            for section in sections:
+                if 'GENERAL FIT RULES' in section:
+                    lines = section.split('\n')
+                    for line in lines:
+                        if ':' in line and 'GENERAL FIT RULES' not in line:
+                            parts = line.split(':', 1)
+                            if len(parts) == 2:
+                                key = parts[0].strip().lower().replace(' ', '_')
+                                value = parts[1].strip().strip('"')
+                                general_rules[key] = value
+                    break
+            
+            male_rules['general_fit_rules'] = general_rules
+            
+        except Exception as e:
+            logger.warning(f"Could not load male body shape rules: {e}")
+            male_rules = self._get_fallback_male_body_shape_rules()
+            
+        return male_rules
+    
+    def _load_female_body_shape_rules(self) -> Dict:
+        """Load female body shape rules from CSV."""
+        import csv
+        import os
+        
+        female_rules = {}
+        csv_path = os.path.join('Fashion designer input', 'Body Shape - female.csv')
+        
+        try:
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            # Parse the content by body shape sections
+            sections = content.split('\n\n')
+            current_shape = None
+            
+            for section in sections:
+                lines = section.strip().split('\n')
+                if not lines:
+                    continue
+                    
+                # Check if this is a body shape header
+                if any(shape in lines[0].upper() for shape in ['HOURGLASS', 'RECTANGLE', 'PEAR', 'APPLE', 'TRIANGLE', 'OVAL']):
+                    current_shape = lines[0].replace('BODY SHAPE', '').strip()
+                    female_rules[current_shape.lower()] = {}
+                    continue
+                
+                # Parse rules for current shape
+                if current_shape and current_shape.lower() in female_rules:
+                    for line in lines:
+                        if ':' in line and not line.startswith('BODY SHAPE'):
+                            parts = line.split(':', 1)
+                            if len(parts) == 2:
+                                key = parts[0].strip().lower().replace(' ', '_')
+                                value = parts[1].strip().strip('"')
+                                female_rules[current_shape.lower()][key] = value
+            
+            # Add general fit rules
+            general_rules = {}
+            for section in sections:
+                if 'GENERAL FIT RULES' in section:
+                    lines = section.split('\n')
+                    for line in lines:
+                        if ':' in line and 'GENERAL FIT RULES' not in line:
+                            parts = line.split(':', 1)
+                            if len(parts) == 2:
+                                key = parts[0].strip().lower().replace(' ', '_')
+                                value = parts[1].strip().strip('"')
+                                general_rules[key] = value
+                    break
+            
+            female_rules['general_fit_rules'] = general_rules
+            
+        except Exception as e:
+            logger.warning(f"Could not load female body shape rules: {e}")
+            female_rules = self._get_fallback_female_body_shape_rules()
+            
+        return female_rules
+    
+    def _get_fallback_male_body_shape_rules(self) -> Dict:
+        """Fallback male body shape rules if CSV loading fails."""
+        return {
+            'hourglass': {
+                'best_tops': 'structured shirts, polos, t-shirts fitted',
+                'best_bottoms': 'straight or tapered, not baggy',
+                'perfect_fit': 'blazers with cinched waists, fitted crewnecks, knit polos',
+                'show_off': 'natural upper-lower balance',
+                'never_wear': 'boxy tops/bottoms',
+                'wrong_fit': 'too baggy fits',
+                'pro_tip': 'highlight snatched waists and good neckline to frame face and upper body'
+            },
+            'general_fit_rules': {
+                'fitted_top_with_straight_bottom': 'most flattering combination',
+                'fit_and_flare': 'every body shape looks good in fit n flare silhouettes',
+                'accessories': 'most important fit rule is add accessories'
+            }
+        }
+    
+    def _get_fallback_female_body_shape_rules(self) -> Dict:
+        """Fallback female body shape rules if CSV loading fails."""
+        return {
+            'hourglass': {
+                'best_tops': 'fitted, crop tops, snug tanks, bodycon tees',
+                'best_bottoms': 'straight or fit n flare not baggy',
+                'perfect_fit': 'bodycon dresses, crop top n pants, mini skirts n fitted tops',
+                'show_off': 'always highlight your waist, belts, waist seams',
+                'never_wear': 'boxy tops/bottoms',
+                'wrong_fit': 'too baggy or oversized',
+                'pro_tip': 'accentuate the waist and balance top and bottom evenly'
+            },
+            'general_fit_rules': {
+                'fitted_top_with_straight_bottom': 'most flattering combination',
+                'fit_and_flare': 'every body shape looks good in fit n flare silhouettes',
+                'accessories': 'most important fit rule is add accessories'
+            }
+        }
+
+    def _load_style_mixing_rules(self) -> Dict:
+        """Load style mixing rules from designer CSV."""
+        import csv
+        import os
+        
+        style_rules = {}
+        csv_path = os.path.join('Fashion designer input', 'Style Mixing.csv')
+        
+        try:
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            # Parse style compatibility sections
+            sections = content.split('\n\n')
+            
+            for section in sections:
+                lines = section.strip().split('\n')
+                if not lines:
+                    continue
+                
+                # Parse style types
+                if 'BUSINESS/FORMAL' in lines[0]:
+                    style_rules['business_formal'] = self._parse_style_section(lines)
+                elif 'CASUAL' in lines[0]:
+                    style_rules['casual'] = self._parse_style_section(lines)
+                elif 'STREETWEAR' in lines[0]:
+                    style_rules['streetwear'] = self._parse_style_section(lines)
+                elif 'FORMALITY MIXING RULES' in lines[0]:
+                    style_rules['formality_mixing'] = self._parse_mixing_ratings(lines)
+                elif 'MIXING GUIDELINES' in lines[0]:
+                    style_rules['mixing_guidelines'] = self._parse_mixing_guidelines(lines)
+            
+        except Exception as e:
+            logger.warning(f"Could not load style mixing rules: {e}")
+            style_rules = self._get_fallback_style_mixing_rules()
+            
+        return style_rules
+    
+    def _parse_style_section(self, lines: List[str]) -> Dict:
+        """Parse a style section from the CSV."""
+        style_info = {}
+        for line in lines[1:]:  # Skip header
+            if ':' in line and not line.startswith('STYLE'):
+                parts = line.split(':', 1)
+                if len(parts) == 2:
+                    key = parts[0].strip().lower().replace(' ', '_')
+                    value = parts[1].strip().strip('"')
+                    style_info[key] = value
+        return style_info
+    
+    def _parse_mixing_ratings(self, lines: List[str]) -> Dict:
+        """Parse formality mixing ratings."""
+        ratings = {}
+        for line in lines:
+            if '/' in line and any(char.isdigit() for char in line):
+                # Extract rating from format like "Formal Top + Casual Bottom: 7/10"
+                if ':' in line:
+                    parts = line.split(':')
+                    if len(parts) == 2:
+                        combination = parts[0].strip()
+                        rating_part = parts[1].strip()
+                        # Extract number before /10
+                        import re
+                        numbers = re.findall(r'\d+', rating_part)
+                        if numbers:
+                            ratings[combination] = int(numbers[0])
+        return ratings
+    
+    def _parse_mixing_guidelines(self, lines: List[str]) -> List[str]:
+        """Parse mixing guidelines."""
+        guidelines = []
+        for line in lines:
+            if line.strip() and not line.startswith('MIXING GUIDELINES'):
+                guidelines.append(line.strip())
+        return guidelines
+    
+    def _load_quick_styling_rules(self) -> Dict:
+        """Load quick styling rules from designer CSV."""
+        import csv
+        import os
+        
+        quick_rules = {}
+        csv_path = os.path.join('Fashion designer input', 'Quick Rules.csv')
+        
+        try:
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            # Parse different sections
+            sections = content.split('\n\n')
+            
+            # Parse TRUE/FALSE statements
+            true_false_rules = {}
+            fashion_rules = []
+            biggest_mistakes = []
+            quick_fixes = {}
+            
+            current_section = None
+            
+            for section in sections:
+                lines = section.strip().split('\n')
+                if not lines:
+                    continue
+                
+                if 'TRUE OR FALSE' in section:
+                    current_section = 'true_false'
+                    continue
+                elif 'TOP 5 FASHION RULES' in section:
+                    current_section = 'fashion_rules'
+                    continue
+                elif 'BIGGEST MISTAKES' in section:
+                    current_section = 'mistakes'
+                    continue
+                elif 'QUICK FIXES' in section:
+                    current_section = 'fixes'
+                    continue
+                
+                if current_section == 'true_false':
+                    for line in lines:
+                        if ',' in line and any(keyword in line.lower() for keyword in ['true', 'false']):
+                            parts = line.split(',')
+                            if len(parts) >= 2:
+                                statement = parts[0].strip()
+                                true_false = parts[1].strip()
+                                if len(parts) > 2:
+                                    reason = parts[2].strip().strip('"')
+                                else:
+                                    reason = ""
+                                true_false_rules[statement] = {'answer': true_false, 'reason': reason}
+                
+                elif current_section == 'fashion_rules':
+                    for line in lines:
+                        if line.strip() and not line.startswith('TOP 5'):
+                            fashion_rules.append(line.strip())
+                
+                elif current_section == 'mistakes':
+                    for line in lines:
+                        if line.strip() and not line.startswith('BIGGEST'):
+                            biggest_mistakes.append(line.strip())
+                
+                elif current_section == 'fixes':
+                    for line in lines:
+                        if ':' in line and not line.startswith('QUICK FIXES'):
+                            parts = line.split(':', 1)
+                            if len(parts) == 2:
+                                key = parts[0].strip().lower().replace(' ', '_')
+                                value = parts[1].strip().strip('"')
+                                quick_fixes[key] = value
+            
+            quick_rules = {
+                'true_false_rules': true_false_rules,
+                'fashion_rules': fashion_rules,
+                'biggest_mistakes': biggest_mistakes,
+                'quick_fixes': quick_fixes
+            }
+            
+        except Exception as e:
+            logger.warning(f"Could not load quick styling rules: {e}")
+            quick_rules = self._get_fallback_quick_styling_rules()
+            
+        return quick_rules
+    
+    def _get_fallback_style_mixing_rules(self) -> Dict:
+        """Fallback style mixing rules if CSV loading fails."""
+        return {
+            'business_formal': {
+                'description': 'Business style means professional and structured',
+                'pairs_perfectly_with': 'semi formals like polos, statement shirts',
+                'never_pair_with': 'heavy prints, bleached or ripped denims',
+                'special_mixing_rule': 'keep it in solids, avoids prints'
+            },
+            'casual': {
+                'description': 'Casual style means everyday fit, easy to style',
+                'pairs_perfectly_with': 'almost all styles',
+                'never_pair_with': 'super formal structure fit, tailored pants'
+            },
+            'streetwear': {
+                'description': 'Streetwear style means bold, expressive, chic',
+                'pairs_perfectly_with': 'casuals',
+                'never_pair_with': 'super formal structure fit, tailored pants'
+            },
+            'formality_mixing': {
+                'Formal Top + Casual Bottom': 7,
+                'Casual Top + Formal Bottom': 8,
+                'Business Top + Streetwear Bottom': 6
+            },
+            'mixing_guidelines': [
+                'You can mix formal and casual IF you balance the fit style n silhouette',
+                'The key to successful style mixing is don\'t mix the extremes',
+                'One piece should be a good fit and the other should be loose'
+            ]
+        }
+    
+    def _get_fallback_quick_styling_rules(self) -> Dict:
+        """Fallback quick styling rules if CSV loading fails."""
+        return {
+            'true_false_rules': {
+                'Its okay to wear all black everything': {'answer': 'True', 'reason': 'Safe play for majority'},
+                'You can mix brown and black': {'answer': 'True', 'reason': 'High end fashion combination'},
+                'Patterns on top AND bottom is too much': {'answer': 'True', 'reason': 'Too many colors in small space'}
+            },
+            'fashion_rules': [
+                'Color balance',
+                'Top wear and bottom wear should never have the same silhouette',
+                'Mindfully accessorised',
+                'Be mindful of the occasion you are dressing up for'
+            ],
+            'biggest_mistakes': [
+                'Skinny fit',
+                'White shirt and black pants',
+                'Wrong sizing clothing, too tight or too loose',
+                'Too many colors put together'
+            ],
+            'quick_fixes': {
+                'to_instantly_improve': 'add accessories',
+                'most_versatile_piece': 'blue denims',
+                'when_nothing_works': 'graphic tee n shorts for casual'
+            }
+        }
+
+    def _calculate_comfort_metrics_score(self, top: pd.Series, bottom: pd.Series) -> float:
+        """Calculate comfort metrics score based on product attributes."""
+        try:
+            score = 5.0  # Base score
+            
+            # Check comfort level attributes
+            top_comfort = str(top.get('comfort_level', '')).lower()
+            bottom_comfort = str(bottom.get('comfort_level', '')).lower()
+            
+            # Comfort level scoring
+            comfort_scores = {
+                'high': 8.0,
+                'medium': 6.0,
+                'low': 4.0,
+                'very high': 9.0,
+                'very low': 3.0
+            }
+            
+            if top_comfort in comfort_scores:
+                score += (comfort_scores[top_comfort] - 5.0) * 0.3
+            if bottom_comfort in comfort_scores:
+                score += (comfort_scores[bottom_comfort] - 5.0) * 0.3
+            
+            # Check movement restriction
+            top_movement = str(top.get('movement_restriction', '')).lower()
+            bottom_movement = str(bottom.get('movement_restriction', '')).lower()
+            
+            if 'low' in top_movement or 'minimal' in top_movement:
+                score += 1.0
+            elif 'high' in top_movement or 'restrictive' in top_movement:
+                score -= 1.0
+                
+            if 'low' in bottom_movement or 'minimal' in bottom_movement:
+                score += 1.0
+            elif 'high' in bottom_movement or 'restrictive' in bottom_movement:
+                score -= 1.0
+            
+            return min(10.0, max(0.0, score))
+            
+        except Exception as e:
+            logger.error(f"❌ Error calculating comfort metrics: {e}")
+            return 5.0
+    
+    def _calculate_occasion_appropriateness(self, top: pd.Series, bottom: pd.Series, user: Dict) -> float:
+        """Calculate occasion appropriateness score."""
+        try:
+            user_occasion = user.get('occasion_preference', '').lower()
+            if not user_occasion:
+                return 5.0
+            
+            score = 5.0  # Base score
+            
+            # Get product occasion attributes
+            top_occasion = str(top.get('occasion', '')).lower()
+            bottom_occasion = str(bottom.get('occasion', '')).lower()
+            
+            # Occasion matching
+            occasion_keywords = {
+                'work': ['work', 'office', 'professional', 'business'],
+                'casual': ['casual', 'everyday', 'relaxed', 'informal'],
+                'formal': ['formal', 'elegant', 'sophisticated', 'evening'],
+                'party': ['party', 'celebration', 'festive', 'glamorous'],
+                'sport': ['sport', 'athletic', 'active', 'gym']
+            }
+            
+            for occasion_type, keywords in occasion_keywords.items():
+                if occasion_type in user_occasion:
+                    # Check if products match the occasion
+                    top_match = any(keyword in top_occasion for keyword in keywords)
+                    bottom_match = any(keyword in bottom_occasion for keyword in keywords)
+                    
+                    if top_match and bottom_match:
+                        score += 2.0
+                    elif top_match or bottom_match:
+                        score += 1.0
+                    else:
+                        score -= 1.0
+                    break
+            
+            return min(10.0, max(0.0, score))
+            
+        except Exception as e:
+            logger.error(f"❌ Error calculating occasion appropriateness: {e}")
+            return 5.0
+    
+    def _calculate_cultural_context(self, top: pd.Series, bottom: pd.Series, user: Dict) -> float:
+        """Calculate cultural relevance score."""
+        try:
+            score = 5.0  # Base score
+            
+            # Check for cultural preferences in user data
+            user_culture = user.get('cultural_preference', '').lower()
+            if not user_culture:
+                return 5.0
+            
+            # Get product cultural attributes
+            top_cultural = str(top.get('cultural_context', '')).lower()
+            bottom_cultural = str(bottom.get('cultural_context', '')).lower()
+            
+            # Cultural matching
+            if user_culture in top_cultural or user_culture in bottom_cultural:
+                score += 2.0
+            
+            # Check for Indian skin tone considerations (from designer rules)
+            if 'indian' in user_culture or 'south asian' in user_culture:
+                # Check if colors are flattering for Indian skin tones
+                top_color = self._extract_color(top).lower()
+                bottom_color = self._extract_color(bottom).lower()
+                
+                indian_flattering_colors = ['olive green', 'deep red', 'maroon', 'navy', 'emerald green']
+                if top_color in indian_flattering_colors or bottom_color in indian_flattering_colors:
+                    score += 1.0
+            
+            return min(10.0, max(0.0, score))
+            
+        except Exception as e:
+            logger.error(f"❌ Error calculating cultural context: {e}")
+            return 5.0
+    
+    def _calculate_versatility_score(self, top: pd.Series, bottom: pd.Series) -> float:
+        """Calculate versatility score based on product attributes."""
+        try:
+            score = 5.0  # Base score
+            
+            # Check versatility attributes
+            top_versatility = str(top.get('style_versatility', '')).lower()
+            bottom_versatility = str(bottom.get('style_versatility', '')).lower()
+            
+            # Versatility scoring
+            versatility_scores = {
+                'high': 8.0,
+                'medium': 6.0,
+                'low': 4.0,
+                'very high': 9.0,
+                'very low': 3.0
+            }
+            
+            if top_versatility in versatility_scores:
+                score += (versatility_scores[top_versatility] - 5.0) * 0.3
+            if bottom_versatility in versatility_scores:
+                score += (versatility_scores[bottom_versatility] - 5.0) * 0.3
+            
+            # Check adaptability
+            top_adaptability = str(top.get('adaptability', '')).lower()
+            bottom_adaptability = str(bottom.get('adaptability', '')).lower()
+            
+            if 'high' in top_adaptability or 'versatile' in top_adaptability:
+                score += 1.0
+            if 'high' in bottom_adaptability or 'versatile' in bottom_adaptability:
+                score += 1.0
+            
+            return min(10.0, max(0.0, score))
+            
+        except Exception as e:
+            logger.error(f"❌ Error calculating versatility score: {e}")
+            return 5.0
+
+    def _apply_designer_rule_engine(self, top: pd.Series, bottom: pd.Series, user: Dict) -> Dict[str, float]:
+        """✅ ENHANCED: Apply comprehensive designer rule engine with programmatic logic."""
+        rule_scores = {
+            'color_harmony': 0.0,
+            'body_shape': 0.0,
+            'style_mixing': 0.0,
+            'quick_rules': 0.0,
+            'fit_balance': 0.0,
+            'silhouette': 0.0,
+            'accessories': 0.0,
+            'seasonal': 0.0,
+            'cultural': 0.0,
+            'professional': 0.0
+        }
+        
+        try:
+            # 1. COLOR HARMONY RULE ENGINE
+            rule_scores['color_harmony'] = self._apply_color_harmony_rules(top, bottom, user)
+            
+            # 2. BODY SHAPE RULE ENGINE
+            rule_scores['body_shape'] = self._apply_body_shape_rules(top, bottom, user)
+            
+            # 3. STYLE MIXING RULE ENGINE
+            rule_scores['style_mixing'] = self._apply_style_mixing_rules(top, bottom, user)
+            
+            # 4. QUICK RULES ENGINE
+            rule_scores['quick_rules'] = self._apply_quick_rules_engine(top, bottom, user)
+            
+            # 5. FIT BALANCE RULE ENGINE
+            rule_scores['fit_balance'] = self._apply_fit_balance_rules(top, bottom, user)
+            
+            # 6. SILHOUETTE RULE ENGINE
+            rule_scores['silhouette'] = self._apply_silhouette_rules(top, bottom, user)
+            
+            # 7. ACCESSORIES RULE ENGINE
+            rule_scores['accessories'] = self._apply_accessories_rules(top, bottom, user)
+            
+            # 8. SEASONAL RULE ENGINE
+            rule_scores['seasonal'] = self._apply_seasonal_rules(top, bottom, user)
+            
+            # 9. CULTURAL RULE ENGINE
+            rule_scores['cultural'] = self._apply_cultural_rules(top, bottom, user)
+            
+            # 10. PROFESSIONAL RULE ENGINE
+            rule_scores['professional'] = self._apply_professional_rules(top, bottom, user)
+            
+        except Exception as e:
+            logger.error(f"❌ Error in designer rule engine: {e}")
+        
+        return rule_scores
+    
+    def _apply_color_harmony_rules(self, top: pd.Series, bottom: pd.Series, user: Dict) -> float:
+        """Apply color harmony rules with programmatic logic."""
+        score = 5.0
+        top_color = self._extract_color(top).title()
+        bottom_color = self._extract_color(bottom).title()
+        
+        if not top_color or not bottom_color:
+            return score
+        
+        # Rule 1: Exact designer combinations
+        color_pair = (bottom_color, top_color)
+        if color_pair in self.color_harmony_map:
+            rule = self.color_harmony_map[color_pair]
+            rating = rule.get('rating', 5)
+            score = rating / 10.0 * 10.0  # Convert to 0-10 scale
+            logger.debug(f"🎨 Designer color rule applied: {bottom_color} + {top_color} = {score:.1f}")
+            return score
+        
+        # Rule 2: Color family matching
+        color_families = {
+            'warm': ['red', 'orange', 'yellow', 'pink', 'coral'],
+            'cool': ['blue', 'green', 'purple', 'teal', 'navy'],
+            'neutral': ['black', 'white', 'gray', 'brown', 'beige', 'cream']
+        }
+        
+        top_family = self._get_color_family(top_color)
+        bottom_family = self._get_color_family(bottom_color)
+        
+        # Rule 2a: Monochromatic (same family)
+        if top_family == bottom_family and top_family != 'neutral':
+            score += 2.0
+        
+        # Rule 2b: Complementary (opposite families)
+        if (top_family == 'warm' and bottom_family == 'cool') or (top_family == 'cool' and bottom_family == 'warm'):
+            score += 1.5
+        
+        # Rule 2c: Neutral + Color (always safe)
+        if top_family == 'neutral' or bottom_family == 'neutral':
+            score += 1.0
+        
+        # Rule 3: Brightness balance
+        top_brightness = self._get_color_brightness(top_color)
+        bottom_brightness = self._get_color_brightness(bottom_color)
+        
+        if abs(top_brightness - bottom_brightness) <= 2:  # Similar brightness
+            score += 1.0
+        elif abs(top_brightness - bottom_brightness) >= 5:  # High contrast
+            score += 0.5
+        
+        return min(10.0, max(0.0, score))
+    
+    def _apply_body_shape_rules(self, top: pd.Series, bottom: pd.Series, user: Dict) -> float:
+        """Apply body shape rules with programmatic logic."""
+        score = 5.0
+        user_gender = user.get('Gender', '').lower()
+        body_shape = user.get('Body Shape', '').lower()
+        
+        if not body_shape or not user_gender:
+            return score
+        
+        gender_rules = self.body_shape_rules.get(user_gender, {})
+        shape_rules = gender_rules.get(body_shape, {})
+        
+        if not shape_rules:
+            return score
+        
+        top_title = str(top.get('title', '')).lower()
+        bottom_title = str(bottom.get('title', '')).lower()
+        
+        # Rule 1: Best tops matching
+        best_tops = shape_rules.get('best_tops', '')
+        if best_tops:
+            keywords = self._extract_keywords_from_text(best_tops)
+            matches = sum(1 for keyword in keywords if keyword in top_title)
+            if matches > 0:
+                score += (matches / len(keywords)) * 2.0
+        
+        # Rule 2: Best bottoms matching
+        best_bottoms = shape_rules.get('best_bottoms', '')
+        if best_bottoms:
+            keywords = self._extract_keywords_from_text(best_bottoms)
+            matches = sum(1 for keyword in keywords if keyword in bottom_title)
+            if matches > 0:
+                score += (matches / len(keywords)) * 2.0
+        
+        # Rule 3: Never wear violations
+        never_wear = shape_rules.get('never_wear', '')
+        if never_wear:
+            keywords = self._extract_keywords_from_text(never_wear)
+            violations = sum(1 for keyword in keywords if keyword in top_title or keyword in bottom_title)
+            if violations > 0:
+                score -= violations * 1.5
+        
+        # Rule 4: Body shape specific rules
+        if body_shape == 'hourglass':
+            # Check for waist emphasis
+            waist_keywords = ['fitted', 'cinched', 'belt', 'waist', 'crop']
+            if any(keyword in top_title for keyword in waist_keywords):
+                score += 1.5
+        
+        elif body_shape == 'rectangle':
+            # Check for volume creation
+            volume_keywords = ['layered', 'puff', 'flare', 'volume', 'structured']
+            if any(keyword in top_title for keyword in volume_keywords):
+                score += 1.5
+        
+        elif body_shape == 'pear':
+            # Check for upper body emphasis
+            upper_keywords = ['statement', 'detail', 'volume', 'layered']
+            if any(keyword in top_title for keyword in upper_keywords):
+                score += 1.5
+        
+        return min(10.0, max(0.0, score))
+    
+    def _apply_style_mixing_rules(self, top: pd.Series, bottom: pd.Series, user: Dict) -> float:
+        """Apply style mixing rules with programmatic logic."""
+        score = 5.0
+        
+        # Rule 1: Formality level calculation
+        top_formality = self._calculate_formality_level(top)
+        bottom_formality = self._calculate_formality_level(bottom)
+        
+        # Rule 1a: Formality mixing score
+        formality_diff = abs(top_formality - bottom_formality)
+        if formality_diff == 1:  # Slight difference (good)
+            score += 2.0
+        elif formality_diff == 2:  # Moderate difference (acceptable)
+            score += 1.0
+        elif formality_diff >= 3:  # Large difference (problematic)
+            score -= 1.0
+        
+        # Rule 1b: Specific formality combinations
+        if top_formality > bottom_formality:  # Formal top + casual bottom
+            score += 1.0
+        elif bottom_formality > top_formality:  # Casual top + formal bottom
+            score += 1.5
+        
+        # Rule 2: Style compatibility
+        top_style = str(top.get('primary_style', '')).lower()
+        bottom_style = str(bottom.get('primary_style', '')).lower()
+        
+        # Check against designer style mixing rules
+        for style_type, rules in self.style_mixing_rules.items():
+            if isinstance(rules, dict):
+                never_pair = rules.get('never_pair_with', '')
+                if never_pair:
+                    never_keywords = self._extract_keywords_from_text(never_pair)
+                    violations = sum(1 for keyword in never_keywords 
+                                   if keyword in top_style or keyword in bottom_style)
+                    if violations > 0:
+                        score -= violations * 1.0
+        
+        # Rule 3: Fit balance (from designer rules)
+        top_fit = self._get_fit_type(top)
+        bottom_fit = self._get_fit_type(bottom)
+        
+        if top_fit != bottom_fit:  # Different fits (good)
+            score += 1.5
+        elif top_fit == 'fitted' and bottom_fit == 'fitted':  # Both fitted (bad for most)
+            score -= 1.0
+        
+        return min(10.0, max(0.0, score))
+    
+    def _apply_quick_rules_engine(self, top: pd.Series, bottom: pd.Series, user: Dict) -> float:
+        """Apply quick styling rules with programmatic logic."""
+        score = 5.0
+        violations = []
+        
+        top_title = str(top.get('title', '')).lower()
+        bottom_title = str(bottom.get('title', '')).lower()
+        
+        # Rule 1: Pattern balance
+        pattern_keywords = ['print', 'pattern', 'floral', 'striped', 'checkered', 'plaid', 'geometric']
+        top_patterns = sum(1 for keyword in pattern_keywords if keyword in top_title)
+        bottom_patterns = sum(1 for keyword in pattern_keywords if keyword in bottom_title)
+        
+        if top_patterns > 0 and bottom_patterns > 0:
+            score -= 2.0
+            violations.append("Too many patterns")
+        
+        # Rule 2: Color balance
+        top_color = self._extract_color(top).lower()
+        bottom_color = self._extract_color(bottom).lower()
+        
+        bright_colors = ['red', 'yellow', 'orange', 'pink', 'purple', 'green', 'blue']
+        top_bright = any(color in top_color for color in bright_colors)
+        bottom_bright = any(color in bottom_color for color in bright_colors)
+        
+        if top_bright and bottom_bright:
+            score -= 1.5
+            violations.append("Too many bright colors")
+        
+        # Rule 3: Classic mistakes
+        classic_mistakes = [
+            ('white', 'shirt', 'black', 'pant'),
+            ('skinny', 'skinny'),
+            ('oversized', 'oversized'),
+            ('baggy', 'baggy')
+        ]
+        
+        for mistake in classic_mistakes:
+            if all(keyword in top_title or keyword in bottom_title for keyword in mistake):
+                score -= 2.0
+                violations.append(f"Classic mistake: {' + '.join(mistake)}")
+        
+        # Rule 4: Silhouette balance
+        top_silhouette = self._get_silhouette_type(top)
+        bottom_silhouette = self._get_silhouette_type(bottom)
+        
+        if top_silhouette == bottom_silhouette and top_silhouette != 'unknown':
+            score -= 1.0
+            violations.append("Same silhouette top and bottom")
+        
+        # Rule 5: Positive rules
+        positive_combinations = [
+            ('fitted', 'loose'),
+            ('structured', 'relaxed'),
+            ('crop', 'high-waist'),
+            ('oversized', 'fitted')
+        ]
+        
+        for combo in positive_combinations:
+            if (combo[0] in top_title and combo[1] in bottom_title) or \
+               (combo[1] in top_title and combo[0] in bottom_title):
+                score += 1.0
+        
+        if violations:
+            logger.debug(f"🚨 Quick rules violations: {violations}")
+        
+        return min(10.0, max(0.0, score))
+    
+    def _apply_fit_balance_rules(self, top: pd.Series, bottom: pd.Series, user: Dict) -> float:
+        """Apply fit balance rules with programmatic logic."""
+        score = 5.0
+        
+        # Rule 1: Fit contrast (designer rule: "fitted top + loose bottom")
+        top_fit = self._get_fit_type(top)
+        bottom_fit = self._get_fit_type(bottom)
+        
+        if top_fit == 'fitted' and bottom_fit in ['loose', 'relaxed', 'straight']:
+            score += 2.0
+        elif bottom_fit == 'fitted' and top_fit in ['loose', 'relaxed', 'oversized']:
+            score += 1.5
+        elif top_fit == bottom_fit and top_fit == 'fitted':
+            score -= 1.0  # Both fitted (not ideal)
+        
+        # Rule 2: Proportion balance
+        top_length = self._get_length_type(top)
+        bottom_length = self._get_length_type(bottom)
+        
+        if top_length == 'crop' and bottom_length == 'high-waist':
+            score += 1.5
+        elif top_length == 'long' and bottom_length == 'mid-rise':
+            score += 1.0
+        
+        return min(10.0, max(0.0, score))
+    
+    def _apply_silhouette_rules(self, top: pd.Series, bottom: pd.Series, user: Dict) -> float:
+        """Apply silhouette rules with programmatic logic."""
+        score = 5.0
+        
+        # Rule 1: Silhouette contrast
+        top_silhouette = self._get_silhouette_type(top)
+        bottom_silhouette = self._get_silhouette_type(bottom)
+        
+        if top_silhouette != bottom_silhouette:
+            score += 1.5
+        
+        # Rule 2: Body shape specific silhouettes
+        body_shape = user.get('Body Shape', '').lower()
+        
+        if body_shape == 'hourglass':
+            if top_silhouette == 'fitted' and bottom_silhouette in ['straight', 'flare']:
+                score += 1.5
+        elif body_shape == 'rectangle':
+            if top_silhouette in ['loose', 'oversized'] and bottom_silhouette == 'straight':
+                score += 1.5
+        elif body_shape == 'pear':
+            if top_silhouette in ['loose', 'oversized'] and bottom_silhouette == 'straight':
+                score += 1.5
+        
+        return min(10.0, max(0.0, score))
+    
+    def _apply_accessories_rules(self, top: pd.Series, bottom: pd.Series, user: Dict) -> float:
+        """Apply accessories rules with programmatic logic."""
+        score = 5.0
+        
+        # Rule 1: Accessory-friendly pieces
+        accessory_keywords = ['collar', 'pocket', 'button', 'detail', 'embellishment']
+        top_accessories = sum(1 for keyword in accessory_keywords if keyword in str(top.get('title', '')).lower())
+        bottom_accessories = sum(1 for keyword in accessory_keywords if keyword in str(bottom.get('title', '')).lower())
+        
+        if top_accessories > 0 or bottom_accessories > 0:
+            score += 1.0
+        
+        # Rule 2: Minimal pieces (need accessories)
+        minimal_keywords = ['basic', 'plain', 'simple', 'solid']
+        top_minimal = any(keyword in str(top.get('title', '')).lower() for keyword in minimal_keywords)
+        bottom_minimal = any(keyword in str(bottom.get('title', '')).lower() for keyword in minimal_keywords)
+        
+        if top_minimal and bottom_minimal:
+            score += 0.5  # Encourages accessories
+        
+        return min(10.0, max(0.0, score))
+    
+    def _apply_seasonal_rules(self, top: pd.Series, bottom: pd.Series, user: Dict) -> float:
+        """Apply seasonal rules with programmatic logic."""
+        score = 5.0
+        
+        # Get current season (simplified)
+        import datetime
+        month = datetime.datetime.now().month
+        
+        if month in [3, 4, 5, 6]:  # Spring/Summer
+            season = 'spring_summer'
+        else:  # Fall/Winter
+            season = 'fall_winter'
+        
+        # Check seasonal color combinations
+        seasonal_rules = self.color_harmony_map.get('_seasonal_rules', {})
+        season_combinations = seasonal_rules.get(season, [])
+        
+        top_color = self._extract_color(top).title()
+        bottom_color = self._extract_color(bottom).title()
+        
+        for base, pair in season_combinations:
+            if (bottom_color.lower() in base.lower() and top_color.lower() in pair.lower()) or \
+               (top_color.lower() in base.lower() and bottom_color.lower() in pair.lower()):
+                score += 2.0
+                break
+        
+        return min(10.0, max(0.0, score))
+    
+    def _apply_cultural_rules(self, top: pd.Series, bottom: pd.Series, user: Dict) -> float:
+        """Apply cultural rules with programmatic logic."""
+        score = 5.0
+        
+        # Rule 1: Indian skin tone considerations
+        user_culture = user.get('cultural_preference', '').lower()
+        if 'indian' in user_culture or 'south asian' in user_culture:
+            top_color = self._extract_color(top).lower()
+            bottom_color = self._extract_color(bottom).lower()
+            
+            indian_flattering = ['olive green', 'deep red', 'maroon', 'navy', 'emerald green', 'burgundy']
+            if top_color in indian_flattering or bottom_color in indian_flattering:
+                score += 1.5
+        
+        return min(10.0, max(0.0, score))
+    
+    def _apply_professional_rules(self, top: pd.Series, bottom: pd.Series, user: Dict) -> float:
+        """Apply professional rules with programmatic logic."""
+        score = 5.0
+        
+        # Rule 1: Professional setting considerations
+        occasion = user.get('occasion_preference', '').lower()
+        if 'work' in occasion or 'professional' in occasion or 'office' in occasion:
+            # Check for professional colors
+            professional_colors = ['black', 'navy', 'gray', 'white', 'brown']
+            top_color = self._extract_color(top).lower()
+            bottom_color = self._extract_color(bottom).lower()
+            
+            if top_color in professional_colors or bottom_color in professional_colors:
+                score += 1.0
+            
+            # Check for professional styles
+            professional_keywords = ['shirt', 'pant', 'blazer', 'trouser', 'formal']
+            top_professional = any(keyword in str(top.get('title', '')).lower() for keyword in professional_keywords)
+            bottom_professional = any(keyword in str(bottom.get('title', '')).lower() for keyword in professional_keywords)
+            
+            if top_professional and bottom_professional:
+                score += 1.5
+        
+        return min(10.0, max(0.0, score))
+    
+    # Helper methods for rule engine
+    def _get_color_family(self, color: str) -> str:
+        """Get color family classification."""
+        color = color.lower()
+        warm = ['red', 'orange', 'yellow', 'pink', 'coral', 'peach']
+        cool = ['blue', 'green', 'purple', 'teal', 'navy', 'mint']
+        neutral = ['black', 'white', 'gray', 'brown', 'beige', 'cream', 'tan']
+        
+        if any(w in color for w in warm):
+            return 'warm'
+        elif any(c in color for c in cool):
+            return 'cool'
+        elif any(n in color for n in neutral):
+            return 'neutral'
+        return 'unknown'
+    
+    def _get_color_brightness(self, color: str) -> int:
+        """Get color brightness level (1-10)."""
+        color = color.lower()
+        brightness_map = {
+            'white': 10, 'yellow': 9, 'pink': 8, 'orange': 7, 'red': 6,
+            'green': 5, 'blue': 4, 'purple': 3, 'brown': 2, 'black': 1
+        }
+        return brightness_map.get(color, 5)
+    
+    def _extract_keywords_from_text(self, text: str) -> List[str]:
+        """Extract keywords from natural language text."""
+        if not text:
+            return []
+        
+        # Remove common words and extract meaningful keywords
+        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'}
+        words = text.lower().split()
+        keywords = [word for word in words if word not in stop_words and len(word) > 2]
+        
+        return keywords
+    
+    def _calculate_formality_level(self, product: pd.Series) -> int:
+        """Calculate formality level of a product (1-10)."""
+        title = str(product.get('title', '')).lower()
+        style = str(product.get('primary_style', '')).lower()
+        
+        formality_keywords = {
+            'formal': 9, 'business': 8, 'professional': 8, 'elegant': 8,
+            'casual': 5, 'relaxed': 4, 'streetwear': 3, 'athleisure': 2,
+            'activewear': 2, 'sport': 2, 'oversized': 4, 'fitted': 6
+        }
+        
+        max_level = 5  # Default
+        for keyword, level in formality_keywords.items():
+            if keyword in title or keyword in style:
+                max_level = max(max_level, level)
+        
+        return max_level
+    
+    def _get_fit_type(self, product: pd.Series) -> str:
+        """Get fit type of a product."""
+        title = str(product.get('title', '')).lower()
+        
+        if any(keyword in title for keyword in ['fitted', 'slim', 'tight', 'bodycon']):
+            return 'fitted'
+        elif any(keyword in title for keyword in ['loose', 'relaxed', 'oversized', 'baggy']):
+            return 'loose'
+        elif any(keyword in title for keyword in ['straight', 'regular', 'classic']):
+            return 'straight'
+        return 'unknown'
+    
+    def _get_length_type(self, product: pd.Series) -> str:
+        """Get length type of a product."""
+        title = str(product.get('title', '')).lower()
+        
+        if any(keyword in title for keyword in ['crop', 'short', 'mini']):
+            return 'crop'
+        elif any(keyword in title for keyword in ['long', 'maxi', 'full']):
+            return 'long'
+        elif any(keyword in title for keyword in ['mid', 'regular']):
+            return 'mid'
+        return 'unknown'
+
 def main():
     """Main function to test the enhanced Supabase outfit generator."""
+    import argparse
+    parser = argparse.ArgumentParser(description="Test the enhanced Supabase outfit generator.")
+    parser.add_argument('--user_id', type=int, help='User ID to generate outfits for (for local testing only)')
+    args = parser.parse_args()
+
+    if args.user_id is None:
+        print("Usage: python phase1_supabase_outfits_generator.py --user_id <USER_ID>")
+        print("This script is intended for API use. For local testing, provide a user ID.")
+        return
+
     try:
         # Initialize enhanced generator
         generator = SupabaseMainOutfitsGenerator()
-        
-        # Test with a user
-        user_id = 2
+        user_id = args.user_id
         logger.info(f"🎯 Testing enhanced outfit generation for User {user_id}")
-        
         success = generator.generate_and_save_outfits(user_id)
-        
         if success:
             print(f"\n✅ SUCCESS: Enhanced outfits generated and saved for user {user_id}")
             print(f"📁 Outfits are now available in Supabase database")
             print(f"🔗 API Endpoint: GET /api/user/{user_id}/outfits")
         else:
             print(f"\n❌ FAILED: Could not generate enhanced outfits for user {user_id}")
-            
     except Exception as e:
         print(f"\n❌ ERROR: {e}")
 

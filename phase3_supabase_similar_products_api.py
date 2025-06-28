@@ -1,5 +1,6 @@
 # Phase 3 ENHANCED: Same-Category Similar Products with Supabase Integration
 # Focus: Same product type with color/design diversity + user preference integration + Supabase DB
+# ✅ ENHANCED: Now with Phase 2 optimizations + Precomputed embeddings + Same-category filtering
 
 import pandas as pd
 import numpy as np
@@ -36,7 +37,12 @@ class SupabaseEnhancedSimilarProductsGenerator:
     """
     Phase 3 ENHANCED: Same-category similar products with diversity, user preferences, and Supabase integration
     ✅ ENHANCED: Now with Supabase database integration + Advanced Fashion Intelligence
+    ✅ ENHANCED: Now with Phase 2 optimizations + Precomputed embeddings + Same-category filtering
     """
+    
+    # ✅ OPTIMIZATION: Class-level model cache to avoid reloading
+    _model_cache = None
+    _model_cache_ready = False
     
     def __init__(self, config: Dict = None):
         """Initialize the Supabase-enabled enhanced similar products generator."""
@@ -62,16 +68,8 @@ class SupabaseEnhancedSimilarProductsGenerator:
             logger.error("❌ Database connection failed. Please check your Supabase configuration.")
             raise ConnectionError("Failed to connect to Supabase database")
         
-        # Load model with CPU optimization
-        try:
-            if self.is_railway:
-                logger.info("🔧 Loading model with Railway CPU optimizations")
-            self.model = SentenceTransformer(self.config['model_name'])
-            logger.info(f"✅ Model loaded: {self.config['model_name']}")
-        except Exception as e:
-            logger.error(f"❌ Failed to load model: {e}")
-            raise
-        
+        # ✅ OPTIMIZATION: Lazy load model only when needed
+        self.model = None
         self.embedding_cache = {}
         
         # FAISS indexes for different wear types
@@ -102,6 +100,28 @@ class SupabaseEnhancedSimilarProductsGenerator:
         
         # Load context mappings (outfit intelligence) if available
         self.context_mappings = {}
+        
+    def _ensure_model_loaded(self):
+        """Lazy load the model only when needed."""
+        if self.model is None:
+            try:
+                if self.is_railway:
+                    logger.info("🔧 Loading model with Railway CPU optimizations")
+                
+                # ✅ OPTIMIZATION: Use cached model if available
+                if SupabaseEnhancedSimilarProductsGenerator._model_cache is not None:
+                    self.model = SupabaseEnhancedSimilarProductsGenerator._model_cache
+                    logger.info(f"✅ Using cached model: {self.config['model_name']}")
+                else:
+                    self.model = SentenceTransformer(self.config['model_name'])
+                    # Cache the model for future use
+                    SupabaseEnhancedSimilarProductsGenerator._model_cache = self.model
+                    SupabaseEnhancedSimilarProductsGenerator._model_cache_ready = True
+                    logger.info(f"✅ Model loaded and cached: {self.config['model_name']}")
+                    
+            except Exception as e:
+                logger.error(f"❌ Failed to load model: {e}")
+                raise
         
     def _default_config(self) -> Dict:
         """Enhanced default configuration for same-category focus with Supabase."""
@@ -204,35 +224,57 @@ class SupabaseEnhancedSimilarProductsGenerator:
             }
         }
     
+    def get_product_by_id_direct(self, product_id: str) -> Optional[pd.Series]:
+        """Directly fetch a specific product by ID from the database without loading all products."""
+        try:
+            logger.info(f"🔍 Directly fetching product {product_id} from database...")
+            
+            # Query only the specific product
+            result = self.db.client.table('tagged_products').select(
+                'id,title,product_type,gender,primary_style,primary_color,image_url,full_caption,product_embedding,scraped_category,style_category'
+            ).eq('product_id', product_id).execute()
+            
+            if result.data and len(result.data) > 0:
+                product_data = result.data[0]
+                logger.info(f"✅ Found product {product_id} directly from database")
+                return pd.Series(product_data)
+            else:
+                logger.warning(f"❌ Product {product_id} not found in database")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Error fetching product {product_id} directly: {e}")
+            return None
+
     def load_products_from_supabase(self) -> pd.DataFrame:
         """Load products data from Supabase database."""
         try:
             logger.info("Loading products from Supabase for Phase 3...")
             
-            # Use the database method to get products
-            products_df = self.db.get_products()
-            
-            if products_df.empty:
+            # Use a reasonable limit to avoid timeouts
+            products_df = self.db.get_products(limit=5000)  # Use 5000 as a safe limit
+                
+            if not products_df.empty:
+                logger.info(f"✅ Successfully loaded {len(products_df)} products from Supabase")
+                return products_df
+            else:
                 logger.error("❌ No products data available from Supabase")
                 return pd.DataFrame()
-            
-            logger.info(f"✅ Successfully loaded {len(products_df)} products from Supabase")
-            return products_df
                 
         except Exception as e:
-            logger.error(f"Error loading products from Supabase: {e}")
+            logger.error(f"❌ Error loading products from Supabase: {e}")
             return pd.DataFrame()
     
     def validate_products_data(self, products_df: pd.DataFrame) -> pd.DataFrame:
         """Enhanced data validation with price integration."""
-        required_columns = ["title", "wear_type"]
+        required_columns = ["title", "product_type"]
         missing_columns = [col for col in required_columns if col not in products_df.columns]
         
         if missing_columns:
             raise ValueError(f"Missing required columns: {missing_columns}")
         
         # Clean data
-        products_df = products_df.dropna(subset=["title", "wear_type"])
+        products_df = products_df.dropna(subset=["title", "product_type"])
         
         # Use existing price column or estimate
         if 'price' not in products_df.columns:
@@ -253,7 +295,7 @@ class SupabaseEnhancedSimilarProductsGenerator:
                 products_df['product_id'] = products_df['id']
             else:
                 products_df['product_id'] = range(len(products_df))
-                
+        
         logger.info(f"✅ Products validation complete. Price range: ₹{products_df['price'].min():.0f} - ₹{products_df['price'].max():.0f}")
         
         return products_df
@@ -276,61 +318,66 @@ class SupabaseEnhancedSimilarProductsGenerator:
                             user_preferences: Dict = None, filters: Dict = None) -> List[Dict]:
         """
         Enhanced same-category similar products with diversity, caching, and pre-filtering using Supabase.
+        ✅ ENHANCED: Now enforces strict same-category filtering by product_type and style_category.
         """
         from database import get_db
         db = get_db()
         import time
         start_time = time.time()
+        
         # 1. Check for cached results first
         cached = db.get_cached_similar_products(product_id, user_preferences, filters)
         if cached and len(cached) >= num_similar:
             logger.info(f"✅ Returning {len(cached)} cached similar products for {product_id}")
             return cached[:num_similar]
 
-        # 2. Load and validate products from Supabase
+        # 2. Try direct product lookup first (more efficient)
+        source_product = self.get_product_by_id_direct(product_id)
+        if source_product is None:
+            logger.error(f"❌ Product {product_id} not found in database")
+            return []
+        
+        logger.info(f"✅ Found source product: {source_product.get('title', 'Unknown')}")
+
+        # 3. Load products for similarity search (with reasonable limit)
         products_df = self.load_products_from_supabase()
         if products_df.empty:
             logger.error("No products available from Supabase")
             return []
         products_df = self.validate_products_data(products_df)
 
-        # 3. Get source product
-        source_product = self.get_product_by_id(product_id, products_df)
-        logger.info(f"Finding similar products for: {source_product.get('title', 'Unknown')}")
+        # 4. Ensure source product has all required fields by processing it
+        # Convert source_product to DataFrame, process it, then back to Series
+        source_df = pd.DataFrame([source_product])
+        source_df = self.validate_products_data(source_df)
+        source_product = source_df.iloc[0] if not source_df.empty else source_product
+        
+        logger.info(f"✅ Processed source product - product_type: {source_product.get('product_type', 'NOT_FOUND')}")
 
-        # 4. Pre-FAISS Filtering
+        # ✅ ENHANCED: Strict same-category filtering
+        source_product_type = source_product.get('product_type', '').strip().lower()
+        source_style_category = source_product.get('style_category', source_product.get('primary_style', '')).strip().lower()
+        
+        logger.info(f"🔍 Source product type: {source_product_type}, style category: {source_style_category}")
+
+        # 5. Pre-FAISS Filtering with strict same-category enforcement
         filtered_df = products_df.copy()
         logger.info(f"🔍 Starting filtering. Initial products: {len(filtered_df)}")
+        
+        # ✅ ENHANCED: Strict same-category filtering
+        if source_product_type:
+            filtered_df = filtered_df[filtered_df['product_type'].str.lower() == source_product_type]
+            logger.info(f"🔍 After product_type filter: {len(filtered_df)} products")
+        
+        if source_style_category:
+            filtered_df = filtered_df[filtered_df['style_category'].str.lower() == source_style_category]
+            logger.info(f"🔍 After style_category filter: {len(filtered_df)} products")
         
         # Gender filter
         if user_preferences and user_preferences.get('gender'):
             gender = user_preferences['gender'].lower()
             filtered_df = filtered_df[filtered_df['gender'].str.lower().isin([gender, 'unisex'])]
             logger.info(f"🔍 After gender filter: {len(filtered_df)} products")
-        
-        # Product type/category filter
-        if 'wear_type' in source_product:
-            filtered_df = filtered_df[filtered_df['wear_type'] == source_product['wear_type']]
-            logger.info(f"🔍 After wear_type filter: {len(filtered_df)} products")
-        
-        # Primary style filter
-        if 'primary_style' in source_product and source_product['primary_style']:
-            filtered_df = filtered_df[filtered_df['primary_style'] == source_product['primary_style']]
-            logger.info(f"🔍 After primary_style filter: {len(filtered_df)} products")
-        
-        # Multi-style filter (make it less strict)
-        if 'primary_style_multi' in source_product and source_product['primary_style_multi']:
-            style_multi = set(source_product['primary_style_multi'])
-            # Only apply this filter if we have a reasonable number of products
-            if len(filtered_df) > 100:  # Only filter if we have enough products
-                filtered_df = filtered_df[filtered_df['primary_style_multi'].apply(
-                    lambda x: bool(set(x) & style_multi) if isinstance(x, list) and x else True
-                )]
-                logger.info(f"🔍 After primary_style_multi filter: {len(filtered_df)} products")
-            else:
-                logger.info(f"🔍 Skipping primary_style_multi filter (not enough products: {len(filtered_df)})")
-        else:
-            logger.info(f"🔍 No primary_style_multi filter applied")
         
         # Additional filters
         if filters:
@@ -350,23 +397,23 @@ class SupabaseEnhancedSimilarProductsGenerator:
         
         logger.info(f"🔍 Final filtered products: {len(filtered_df)}")
         
-        # 5. Build FAISS indexes on filtered set
-        self.build_faiss_indexes(filtered_df)
+        # 6. Build FAISS indexes on filtered set (by product_type)
+        self.build_faiss_indexes(filtered_df, by_field='product_type')
 
-        # 6. Generate same-category candidates only (from filtered set)
+        # 7. Generate same-category candidates only (from filtered set)
         candidates = self._generate_same_category_candidates(source_product, filtered_df, user_preferences)
         if not candidates:
             logger.warning("No candidate products found after filtering")
             logger.warning("⚠️ Skipping database storage due to no results")
             return []
 
-        # 7. Apply enhanced scoring and filtering for diversity
+        # 8. Apply enhanced scoring and filtering for diversity
         similar_products = self._score_and_filter_same_category_candidates(
             source_product, candidates, user_preferences, filters, num_similar
         )
         logger.info(f"Found {len(similar_products)} diverse same-category products after filtering and FAISS")
 
-        # 8. Store results in cache
+        # 9. Store results in cache
         processing_time_ms = int((time.time() - start_time) * 1000)
         logger.info(f"💾 Storing {len(similar_products)} results in database cache...")
         db.store_similar_products(product_id, similar_products, user_preferences, filters, processing_time_ms)
@@ -375,43 +422,36 @@ class SupabaseEnhancedSimilarProductsGenerator:
     
     def _generate_same_category_candidates(self, source_product: pd.Series, products_df: pd.DataFrame, 
                                          user_preferences: Dict = None) -> List[Dict]:
-        """Generate candidates from same category only with diversity focus."""
-        
-        source_wear_type = source_product.get('wear_type', '')
+        """Generate candidates from same category only with diversity focus (by product_type)."""
+        source_product_type = source_product.get('product_type', '')
         source_text = source_product.get('final_caption', '') or source_product.get('title', '')
-        
         all_candidates = []
-        
         # 1. Core similar products (same category, similar features)
         core_candidates = self.search_similar_products_faiss(
-            source_text, source_wear_type, k=40  # More candidates for better diversity
+            source_text, source_product_type, k=40
         )
         for candidate in core_candidates:
             candidate['candidate_type'] = 'core_similar'
             candidate['boost_factor'] = 1.0
         all_candidates.extend(core_candidates)
-        
         # 2. Color-diverse candidates (same category, different colors)
         if self.config['enable_color_diversity']:
             color_diverse_candidates = self._get_color_diverse_candidates(
                 source_product, products_df, user_preferences
             )
             all_candidates.extend(color_diverse_candidates)
-        
         # 3. Design-diverse candidates (same category, different designs)
         if self.config['enable_design_diversity']:
             design_diverse_candidates = self._get_design_diverse_candidates(
                 source_product, products_df, user_preferences
             )
             all_candidates.extend(design_diverse_candidates)
-        
         # 4. User preference enhanced candidates (same category)
         if user_preferences:
             preference_candidates = self._get_user_preference_candidates(
                 source_product, products_df, user_preferences
             )
             all_candidates.extend(preference_candidates)
-        
         return all_candidates
     
     def _get_color_diverse_candidates(self, source_product: pd.Series, products_df: pd.DataFrame, 
@@ -420,16 +460,16 @@ class SupabaseEnhancedSimilarProductsGenerator:
         
         candidates = []
         source_color = source_product.get('primary_color', '')
-        source_wear_type = source_product.get('wear_type', '')
+        source_product_type = source_product.get('product_type', '')
         
         if source_color in self.color_diversity_matrix:
             diverse_colors = self.color_diversity_matrix[source_color]['diverse_colors']
             
             for color in diverse_colors:
                 # Search for products with diverse colors in same category
-                color_query = f"{color} {source_wear_type}"
+                color_query = f"{color} {source_product_type}"
                 color_candidates = self.search_similar_products_faiss(
-                    color_query, source_wear_type, k=8
+                    color_query, source_product_type, k=8
                 )
                 for candidate in color_candidates:
                     candidate['candidate_type'] = 'color_diverse'
@@ -444,7 +484,7 @@ class SupabaseEnhancedSimilarProductsGenerator:
         
         candidates = []
         source_title = source_product.get('title', '').lower()
-        source_wear_type = source_product.get('wear_type', '')
+        source_product_type = source_product.get('product_type', '')
         
         # Identify source design characteristics
         source_patterns = self._identify_design_patterns(source_title)
@@ -453,9 +493,9 @@ class SupabaseEnhancedSimilarProductsGenerator:
         for pattern_type, patterns in self.design_variation_keywords['patterns'].items():
             if pattern_type not in source_patterns:  # Different from source
                 for pattern in patterns:
-                    design_query = f"{pattern} {source_wear_type}"
+                    design_query = f"{pattern} {source_product_type}"
                     design_candidates = self.search_similar_products_faiss(
-                        design_query, source_wear_type, k=5
+                        design_query, source_product_type, k=5
                     )
                     for candidate in design_candidates:
                         candidate['candidate_type'] = 'design_diverse'
@@ -469,14 +509,14 @@ class SupabaseEnhancedSimilarProductsGenerator:
         """Get candidates based on user preferences within same category."""
         
         candidates = []
-        source_wear_type = source_product.get('wear_type', '')
+        source_product_type = source_product.get('product_type', '')
         
         # User preferred styles within same category
         preferred_styles = user_preferences.get('preferred_styles', [])
         for style in preferred_styles:
-            style_query = f"{style} {source_wear_type}"
+            style_query = f"{style} {source_product_type}"
             style_candidates = self.search_similar_products_faiss(
-                style_query, source_wear_type, k=6
+                style_query, source_product_type, k=6
             )
             for candidate in style_candidates:
                 candidate['candidate_type'] = 'user_preference'
@@ -486,9 +526,9 @@ class SupabaseEnhancedSimilarProductsGenerator:
         # User preferred colors within same category
         preferred_colors = user_preferences.get('preferred_colors', [])
         for color in preferred_colors:
-            color_query = f"{color} {source_wear_type}"
+            color_query = f"{color} {source_product_type}"
             color_candidates = self.search_similar_products_faiss(
-                color_query, source_wear_type, k=6
+                color_query, source_product_type, k=6
             )
             for candidate in color_candidates:
                 candidate['candidate_type'] = 'user_preference'
@@ -545,7 +585,7 @@ class SupabaseEnhancedSimilarProductsGenerator:
                 'brand': candidate_product.get('brand', ''),
                 'style': candidate_product.get('enhanced_primary_style', candidate_product.get('primary_style', '')),
                 'color': candidate_product.get('primary_color', ''),
-                'wear_type': candidate_product.get('wear_type', ''),
+                'product_type': candidate_product.get('product_type', ''),
                 'occasion': candidate_product.get('enhanced_occasion', candidate_product.get('occasion', '')),
                 'similarity_score': similarity_score,
                 'score_breakdown': score_breakdown,
@@ -816,67 +856,74 @@ class SupabaseEnhancedSimilarProductsGenerator:
         
         return True
     
-    # Include necessary methods from original implementation
-    def build_faiss_indexes(self, products_df: pd.DataFrame) -> None:
-        """Build FAISS indexes for different wear types."""
-        logger.info("Building FAISS indexes for enhanced same-category search...")
-        
-        # Railway CPU optimization for FAISS indexing
-        if self.is_railway:
-            logger.info("🏭 Applying Railway CPU limits for FAISS indexing operations")
-            for var in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'OPENBLAS_NUM_THREADS']:
-                os.environ[var] = '1'  # Extra conservative for FAISS operations
-        
-        wear_types = products_df['wear_type'].unique()
-        
-        for wear_type in wear_types:
-            wear_products = products_df[products_df['wear_type'] == wear_type].copy()
-            
-            if wear_products.empty:
-                continue
-            
-            captions = []
-            product_indices = []
-            
-            for idx, row in wear_products.iterrows():
-                caption = row.get('final_caption', '') or row.get('title', '')
-                if caption.strip():
-                    captions.append(caption)
-                    product_indices.append(idx)
-            
-            if not captions:
-                continue
-            
-            logger.info(f"Generating embeddings for {len(captions)} {wear_type} products...")
-            
+    def build_faiss_indexes(self, products_df: pd.DataFrame, by_field: str = 'product_type') -> None:
+        """Build FAISS indexes for each product_type (instead of wear_type)."""
+        import faiss
+        self.faiss_indexes = {}
+        self.product_mappings = {}
+        for product_type, group in products_df.groupby(by_field):
             embeddings = []
-            for caption in captions:
-                embedding = self.get_embedding_cached(caption)
-                embeddings.append(embedding)
-            
-            embeddings = np.array(embeddings)
-            embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
-            
-            # Build FAISS index
-            dimension = embeddings.shape[1]
-            index = faiss.IndexFlatIP(dimension)
-            index.add(embeddings.astype('float32'))
-            
-            self.faiss_indexes[wear_type] = index
-            self.product_mappings[wear_type] = {
-                'indices': product_indices,
-                'products': wear_products.loc[product_indices]
-            }
-            
-            logger.info(f"Built FAISS index for {wear_type}: {len(captions)} products indexed")
-    
-    def get_embedding_cached(self, text: str, cache_key: str = None) -> np.ndarray:
-        """Get embedding with caching."""
+            product_indices = []
+            valid_products = []
+            for idx, row in group.iterrows():
+                if 'product_embedding' in row and row['product_embedding']:
+                    try:
+                        emb = row['product_embedding']
+                        if isinstance(emb, str):
+                            emb = json.loads(emb)
+                        emb = np.array(emb)
+                        embeddings.append(emb)
+                        product_indices.append(idx)
+                        valid_products.append(row)
+                    except Exception as e:
+                        continue
+            if embeddings:
+                embeddings = np.vstack(embeddings)
+                embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
+                index = faiss.IndexFlatIP(embeddings.shape[1])
+                index.add(embeddings.astype('float32'))
+                self.faiss_indexes[product_type] = index
+                self.product_mappings[product_type] = {
+                    'indices': product_indices,
+                    'products': pd.DataFrame(valid_products)
+                }
+                logger.info(f"Built FAISS index for {by_field}={product_type}: {len(embeddings)} products indexed")
+
+    def get_embedding_cached(self, text: str, cache_key: str = None, product_id: str = None) -> np.ndarray:
+        """Get embedding with caching. Now uses precomputed embeddings from tagged_products table."""
         if not cache_key:
             cache_key = text[:100]
         
+        # ✅ ENHANCED: Try to get precomputed embedding from tagged_products table first
+        if product_id:
+            try:
+                # Query the tagged_products table for precomputed embedding
+                result = self.db.client.table('tagged_products').select('product_embedding').eq('id', product_id).execute()
+                
+                if result.data and result.data[0].get('product_embedding'):
+                    embedding_json = result.data[0]['product_embedding']
+                    if isinstance(embedding_json, str):
+                        embedding = np.array(json.loads(embedding_json))
+                    else:
+                        embedding = np.array(embedding_json)
+                    
+                    # Cache the result
+                    if self.config['cache_embeddings']:
+                        self.embedding_cache[cache_key] = embedding
+                    
+                    logger.debug(f"✅ Retrieved precomputed embedding for product {product_id}")
+                    return embedding
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to get precomputed embedding for product {product_id}: {e}")
+                # Fall back to computing embedding
+        
+        # Check cache first
         if self.config['cache_embeddings'] and cache_key in self.embedding_cache:
             return self.embedding_cache[cache_key]
+        
+        # ✅ ENHANCED: Ensure model is loaded before computing embeddings
+        self._ensure_model_loaded()
         
         embedding = self.model.encode([text])[0]
         
@@ -885,61 +932,65 @@ class SupabaseEnhancedSimilarProductsGenerator:
         
         return embedding
     
-    def get_product_by_id(self, product_id: str, products_df: pd.DataFrame) -> pd.Series:
-        """Get product by ID with improved column handling."""
-        # Try with different column names
-        for col in ['product_id', 'id']:
-            if col in products_df.columns:
-                # Try exact match first
-                product = products_df[products_df[col].astype(str) == str(product_id)]
-                if not product.empty:
-                    return product.iloc[0]
-                
-                # Try numeric match if possible
-                try:
-                    numeric_id = int(product_id)
-                    product = products_df[products_df[col] == numeric_id]
-                    if not product.empty:
-                        return product.iloc[0]
-                except ValueError:
-                    pass
+    def get_product_by_id(self, product_id, products_df):
+        """Find a product by product_id only, robust to type mismatches and whitespace."""
+        logger.info(f"Looking for product_id: {product_id} (type: {type(product_id)})")
+        if 'product_id' not in products_df.columns:
+            raise ValueError("'product_id' column not found in products DataFrame")
         
-        raise ValueError(f"Product with ID '{product_id}' not found")
+        # Clean and convert all product_ids to string, strip whitespace
+        products_df['product_id_str'] = products_df['product_id'].astype(str).str.strip()
+        product_id_str = str(product_id).strip()
+        
+        logger.info(f"Available product_ids (first 10): {products_df['product_id_str'].head(10).tolist()}")
+        logger.info(f"Total products loaded: {len(products_df)}")
+        logger.info(f"Product ID being searched: '{product_id_str}'")
+        
+        match = products_df[products_df['product_id_str'] == product_id_str]
+        
+        if not match.empty:
+            logger.info(f"✅ Found product {product_id} in DataFrame")
+            return match.iloc[0]
+        else:
+            # Print first 100 unique product_ids for debugging (not all to avoid log overflow)
+            unique_ids = products_df['product_id_str'].unique()
+            logger.error(f"❌ Product {product_id} not found in DataFrame")
+            logger.error(f"Type of product_id being searched: {type(product_id)} value: {product_id}")
+            logger.error(f"First 100 unique product_ids: {unique_ids[:100].tolist()}")
+            logger.error(f"Total unique product_ids: {len(unique_ids)}")
+            
+            # Check if it exists with different formatting
+            if product_id_str in unique_ids:
+                logger.error(f"⚠️ Product {product_id} exists but match failed - possible whitespace/type issue")
+            else:
+                logger.error(f"❌ Product {product_id} does not exist in the loaded data")
+            
+            raise ValueError(f"Product with product_id '{product_id}' not found")
     
-    def search_similar_products_faiss(self, query_text: str, wear_type: str, k: int = 20) -> List[Dict]:
-        """Search for similar products using FAISS."""
-        
-        if wear_type not in self.faiss_indexes:
-            logger.warning(f"No FAISS index available for wear_type: {wear_type}")
+    def search_similar_products_faiss(self, query_text: str, product_type: str, k: int = 20) -> List[Dict]:
+        """Search for similar products using FAISS with precomputed embeddings by product_type."""
+        if product_type not in self.faiss_indexes:
+            logger.warning(f"No FAISS index available for product_type: {product_type}")
             return []
-        
-        # Get query embedding
+        self._ensure_model_loaded()
         query_embedding = self.get_embedding_cached(query_text)
         query_embedding = query_embedding.reshape(1, -1)
         query_embedding = query_embedding / np.linalg.norm(query_embedding, axis=1, keepdims=True)
-        
-        # Search FAISS index
-        index = self.faiss_indexes[wear_type]
+        index = self.faiss_indexes[product_type]
         scores, indices = index.search(query_embedding.astype('float32'), k)
-        
-        # Get corresponding products
-        product_mapping = self.product_mappings[wear_type]
+        product_mapping = self.product_mappings[product_type]
         candidates = []
-        
         for i, (score, faiss_idx) in enumerate(zip(scores[0], indices[0])):
             if faiss_idx >= len(product_mapping['indices']):
                 continue
-                
             product_idx = product_mapping['indices'][faiss_idx]
             product = product_mapping['products'].iloc[faiss_idx]
-            
             candidates.append({
                 'product_idx': product_idx,
                 'product': product,
                 'semantic_score': float(score),
                 'faiss_rank': i + 1
             })
-        
         return candidates
 
 def main():
@@ -961,8 +1012,8 @@ def main():
         'styles': ['Business', 'Formal'],
     }
     
-    # Test with enhanced same-category features
-    test_product_id = "3790"
+    # Test with enhanced same-category features - using product ID 2217 as requested
+    test_product_id = "2217"
     
     logger.info(f"🔍 Testing Enhanced Same-Category Phase 3 with Supabase for product: {test_product_id}")
     
@@ -986,7 +1037,7 @@ def main():
                 print(f"\n{i}. {product['title'][:55]}...")
                 print(f"   Score: {score:.3f} | Type: {ptype}")
                 print(f"   Price: ₹{price} | Style: {product['style']}")
-                print(f"   Color: {product['color']} | Wear: {product['wear_type']}")
+                print(f"   Color: {product['color']} | Wear: {product['product_type']}")
                 
                 # Show score breakdown for first few
                 if i <= 3:
@@ -1004,6 +1055,17 @@ def main():
         print(f"\n❌ Error: {e}")
         import traceback
         traceback.print_exc()
+        
+        # Try to get more specific error information
+        if "timeout" in str(e).lower():
+            print(f"\n⚠️ Database timeout detected. This might be due to:")
+            print(f"   - Large number of products in the database")
+            print(f"   - Network connectivity issues")
+            print(f"   - Database server load")
+            print(f"\n💡 Suggestions:")
+            print(f"   - Try with a smaller product subset")
+            print(f"   - Check database connection")
+            print(f"   - Consider adding pagination to product loading")
 
 if __name__ == "__main__":
     main() 

@@ -854,21 +854,20 @@ class SimilarProducts(Resource):
                     }, 503
             
             import time
-            import signal
-            from contextlib import contextmanager
+            # import signal
+            # from contextlib import contextmanager
             
-            @contextmanager
-            def timeout_handler(seconds):
-                def timeout_signal(signum, frame):
-                    raise TimeoutError(f"Operation timed out after {seconds} seconds")
-                
-                old_handler = signal.signal(signal.SIGALRM, timeout_signal)
-                signal.alarm(seconds)
-                try:
-                    yield
-                finally:
-                    signal.alarm(0)
-                    signal.signal(signal.SIGALRM, old_handler)
+            # @contextmanager
+            # def timeout_handler(seconds):
+            #     def timeout_signal(signum, frame):
+            #         raise TimeoutError(f"Operation timed out after {seconds} seconds")
+            #     old_handler = signal.signal(signal.SIGALRM, timeout_signal)
+            #     signal.alarm(seconds)
+            #     try:
+            #         yield
+            #     finally:
+            #         signal.alarm(0)
+            #         signal.signal(signal.SIGALRM, old_handler)
             
             start_time = time.time()
             
@@ -904,14 +903,14 @@ class SimilarProducts(Resource):
                 logger.info(f"   Diverse: {diverse}, Personalized: {personalized}")
                 
                 # Use Railway-compatible timeout (25s to be safe)
-                with timeout_handler(25):
-                    similar_products = generator.find_similar_products(
-                        product_id=product_id,
-                        num_similar=count,
-                        user_preferences=user_preferences if personalized else None,
-                        filters=filters
-                    )
-                    
+                # with timeout_handler(25):
+                similar_products = generator.find_similar_products(
+                    product_id=product_id,
+                    num_similar=count,
+                    user_preferences=user_preferences if personalized else None,
+                    filters=filters
+                )
+                
             except TimeoutError:
                 logger.warning(f"Similar products search timed out for product {product_id} - responding with retry message")
                 return {
@@ -1485,6 +1484,21 @@ class ImportDebug(Resource):
         }
         
         return results
+
+@debug_ns.route('/products')
+class DebugProducts(Resource):
+    @api.doc('debug_list_products')
+    def get(self):
+        """List the first 20 product IDs and titles from tagged_products table for debugging."""
+        try:
+            db = SupabaseDB()
+            products_df = db.get_products(limit=20)
+            if products_df.empty:
+                return {'success': False, 'products': [], 'message': 'No products found.'}, 200
+            products = products_df[['id', 'title']].fillna('').to_dict(orient='records')
+            return {'success': True, 'products': products, 'count': len(products)}, 200
+        except Exception as e:
+            return {'success': False, 'error': str(e)}, 500
 
 # Add explicit OPTIONS handler for better CORS preflight support
 @app.before_request

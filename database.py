@@ -8,6 +8,7 @@ import pandas as pd
 from typing import Dict, List, Optional, Any
 from supabase import create_client, Client
 from config import get_config
+import time
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -97,64 +98,35 @@ class SupabaseDB:
             logger.error(f"❌ Error retrieving users: {e}")
             return pd.DataFrame()
     
-    def get_products(self, 
-                    wear_type: Optional[str] = None,
-                    gender: Optional[str] = None,
-                    style: Optional[str] = None,
-                    limit: Optional[int] = None,
-                    offset: int = 0,
-                    chunk_size: int = 1000) -> pd.DataFrame:
-        """
-        Get product data from Supabase tagged_products table with enhanced tags and pagination support.
-        
-        Args:
-            wear_type: Filter by wear type (Upperwear, Bottomwear, etc.)
-            gender: Filter by gender
-            style: Filter by style
-            limit: Total limit of products to fetch (None for all)
-            offset: Offset for pagination
-            chunk_size: Number of products to fetch per chunk
-            
-        Returns:
-            pandas.DataFrame: Product data with rich tags (color, style, fabric, etc.)
-        """
+    def get_products(self, limit: int = None) -> pd.DataFrame:
+        """Get all products from the database."""
         try:
-            if not self.client:
-                logger.error("❌ Supabase client not initialized")
-                return pd.DataFrame()
+            logger.info("🔍 Starting get_products...")
             
-            # If no limit specified, fetch all products using chunked loading
-            if limit is None:
-                return self._get_all_products_chunked(wear_type, gender, style, chunk_size)
+            # ✅ FIX: Only select columns that actually exist in the database
+            needed_columns = [
+                'id', 'title', 'product_type', 'gender',
+                'primary_style', 'primary_color', 'image_url',
+                'full_caption', 'product_embedding', 'scraped_category', 'style_category'
+            ]
             
-            # Otherwise, fetch with pagination
-            query = self.client.table('tagged_products').select('*')
+            query = self.client.table('tagged_products').select(','.join(needed_columns))
             
-            # Apply filters based on tagged_products table structure
-            if wear_type:
-                query = query.ilike('scraped_category', f'%{wear_type}%')
-            if gender:
-                # Filter based on gender field (already available)
-                query = query.ilike('gender', f'%{gender}%')
-            if style:
-                query = query.ilike('primary_style', f'%{style}%')
-            
-            # Apply pagination
-            query = query.range(offset, offset + limit - 1)
+            if limit:
+                query = query.limit(limit)
             
             result = query.execute()
             
             if result.data:
-                df = pd.DataFrame(result.data)
-                df = self._process_products_dataframe(df)
-                logger.info(f"✅ Retrieved {len(df)} products from tagged_products table (offset: {offset}, limit: {limit})")
-                return df
+                products_df = pd.DataFrame(result.data)
+                logger.info(f"✅ get_products: {len(products_df)} products")
+                return self._process_products_dataframe(products_df)
             else:
-                logger.warning("⚠️ No products found in tagged_products table")
+                logger.warning("No products found")
                 return pd.DataFrame()
                 
         except Exception as e:
-            logger.error(f"❌ Error fetching products: {e}")
+            logger.error(f"❌ get_products failed: {e}")
             return pd.DataFrame()
     
     def _get_all_products_chunked(self, 
@@ -177,46 +149,29 @@ class SupabaseDB:
         logger.info(f"🔄 Starting chunked loading of all products (chunk_size: {chunk_size})")
         
         all_products = []
-        offset = 0
         total_fetched = 0
         
-        while True:
-            try:
-                # Fetch chunk
-                chunk_df = self.get_products(
-                    wear_type=wear_type,
-                    gender=gender,
-                    style=style,
-                    limit=chunk_size,
-                    offset=offset
-                )
+        # For now, just get all products in one go since the new get_products method is optimized
+        try:
+            products_df = self.get_products(limit=None)  # Get all products
+            
+            if not products_df.empty:
+                # Apply filters if needed
+                if wear_type:
+                    products_df = products_df[products_df['wear_type'] == wear_type]
+                if gender:
+                    products_df = products_df[products_df['gender'].str.lower() == gender.lower()]
+                if style:
+                    products_df = products_df[products_df['primary_style'].str.contains(style, case=False, na=False)]
                 
-                if chunk_df.empty:
-                    logger.info(f"✅ Completed chunked loading. Total products fetched: {total_fetched}")
-                    break
+                logger.info(f"✅ Successfully loaded {len(products_df)} total products")
+                return products_df
+            else:
+                logger.warning("⚠️ No products loaded")
+                return pd.DataFrame()
                 
-                all_products.append(chunk_df)
-                total_fetched += len(chunk_df)
-                offset += chunk_size
-                
-                logger.info(f"📦 Fetched chunk {len(all_products)}: {len(chunk_df)} products (Total: {total_fetched})")
-                
-                # If we got fewer products than chunk_size, we've reached the end
-                if len(chunk_df) < chunk_size:
-                    logger.info(f"✅ Reached end of products. Total products fetched: {total_fetched}")
-                    break
-                    
-            except Exception as e:
-                logger.error(f"❌ Error fetching chunk at offset {offset}: {e}")
-                break
-        
-        if all_products:
-            # Combine all chunks
-            combined_df = pd.concat(all_products, ignore_index=True)
-            logger.info(f"✅ Successfully loaded {len(combined_df)} total products using chunked loading")
-            return combined_df
-        else:
-            logger.warning("⚠️ No products loaded from chunked loading")
+        except Exception as e:
+            logger.error(f"❌ Error in chunked loading: {e}")
             return pd.DataFrame()
     
     def _process_products_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -816,95 +771,71 @@ class SupabaseDB:
             return {'error': str(e)}
 
     def get_products_with_user_filters(self, user_data: Dict) -> pd.DataFrame:
-        """
-        Get products from Supabase with user-specific filters applied at database level.
-        This dramatically reduces data loading time by only fetching relevant products.
-        
-        Args:
-            user_data: User data dictionary containing gender, style preferences, etc.
-            
-        Returns:
-            pandas.DataFrame: Pre-filtered product data
-        """
+        """Get products with user-specific filters (gender, style preferences, etc.)."""
         try:
-            if not self.client:
-                logger.error("❌ Supabase client not initialized")
-                return pd.DataFrame()
+            logger.info("🔍 Starting get_products_with_user_filters...")
             
-            logger.info("🎯 Applying user filters at database level for optimized loading...")
+            # Extract user preferences
+            gender = user_data.get('Gender', '').lower()
+            style_preferences = user_data.get('style_preferences', [])
+            color_preferences = user_data.get('color_preferences', [])
             
-            # Extract user filters
-            user_gender = user_data.get('Gender', '').lower()
+            logger.info(f"User filters - Gender: {gender}, Styles: {len(style_preferences)}, Colors: {len(color_preferences)}")
             
-            # Start with a simple query and build up
-            query = self.client.table('tagged_products').select('*')
+            # ✅ FIX: Only select columns that actually exist in the database
+            needed_columns = [
+                'id', 'title', 'product_type', 'gender',
+                'primary_style', 'primary_color', 'image_url',
+                'full_caption', 'product_embedding', 'scraped_category'
+            ]
             
-            # ✅ FIX: Use user's apparel preferences instead of hardcoded categories
-            apparel_filters = []
+            # Build base query with specific columns
+            query = self.client.table('tagged_products').select(','.join(needed_columns))
             
-            # Check user's apparel preferences
-            if user_data.get('Apparel Pref Business Casual', False):
-                apparel_filters.extend(['shirt', 'pant', 'trouser', 'jean', 'blouse', 'top'])
+            # ✅ OPTIMIZATION: Add limit to avoid timeouts
+            query = query.limit(10000)  # Limit to 10000 products for faster response
             
-            if user_data.get('Apparel Pref Streetwear', False):
-                apparel_filters.extend(['tshirt', 't-shirt', 'hoodie', 'sweatshirt', 'jean', 'pant', 'jogger', 'track'])
+            # Apply gender filter
+            if gender in ['male', 'female']:
+                query = query.eq('gender', gender.capitalize())
+                logger.info(f"Applied gender filter: {gender.capitalize()}")
             
-            if user_data.get('Apparel Pref Athleisure', False):
-                apparel_filters.extend(['jogger', 'legging', 'track', 'sport', 'athletic', 'hoodie', 'sweatshirt', 'tshirt', 't-shirt'])
+            # ✅ FIXED: Only use columns that actually exist
+            # Apply style preferences if available (only use primary_style, not primary_style_category)
+            if style_preferences:
+                style_conditions = []
+                for style in style_preferences:
+                    style_conditions.append(f"primary_style.ilike.%{style}%")
+                
+                if style_conditions:
+                    query = query.or_(','.join(style_conditions))
+                    logger.info(f"Applied style filters: {len(style_preferences)} styles")
             
-            # If no specific apparel preferences, use fallback based on gender
-            if not apparel_filters:
-                if user_gender in ['male', 'men']:
-                    apparel_filters = ['shirt', 'pant', 'jean', 'trouser', 'tshirt', 't-shirt']
-                elif user_gender in ['female', 'women']:
-                    apparel_filters = ['top', 'blouse', 'shirt', 'pant', 'jean', 'trouser', 'skirt', 'dress']
-                else:
-                    apparel_filters = ['shirt', 'pant', 'jean', 'trouser', 'top', 'blouse']
+            # Apply color preferences if available
+            if color_preferences:
+                color_conditions = []
+                for color in color_preferences:
+                    color_conditions.append(f"primary_color.ilike.%{color}%")
+                
+                if color_conditions:
+                    query = query.or_(','.join(color_conditions))
+                    logger.info(f"Applied color filters: {len(color_preferences)} colors")
             
-            # Remove duplicates and create category filter
-            apparel_filters = list(set(apparel_filters))
-            category_filter = ','.join([f"scraped_category.ilike.%{filter}%" for filter in apparel_filters])
-            
-            # Apply category filter
-            query = query.or_(category_filter)
-            
-            # Apply gender filtering at database level
-            if user_gender:
-                if user_gender in ['male', 'men']:
-                    # For male users: allow male and unisex products
-                    query = query.in_('gender', ['Male', 'Unisex'])
-                elif user_gender in ['female', 'women']:
-                    # For female users: allow female and unisex products
-                    query = query.in_('gender', ['Female', 'Unisex'])
-                elif user_gender in ['unisex']:
-                    # For unisex users: allow all genders
-                    pass  # No additional filtering needed
-                else:
-                    # For other genders: allow same gender and unisex
-                    query = query.in_('gender', [user_gender.title(), 'Unisex'])
-            
-            # Execute the filtered query
-            logger.info(f"📥 Executing pre-filtered database query with categories: {apparel_filters}")
+            # Execute query
             result = query.execute()
             
             if result.data:
-                df = pd.DataFrame(result.data)
-                df = self._process_products_dataframe(df)
-                
-                logger.info(f"✅ Pre-filtered query returned {len(df)} products (vs loading all products)")
-                logger.info(f"📊 Products by wear type: {df['wear_type'].value_counts().to_dict()}")
-                
-                return df
+                products_df = pd.DataFrame(result.data)
+                logger.info(f"✅ get_products_with_user_filters: {len(products_df)} products")
+                return self._process_products_dataframe(products_df)
             else:
-                logger.warning("⚠️ No products found with basic filters, trying fallback...")
-                # Fallback to chunked loading if pre-filtering fails
-                return self.get_products()
+                logger.warning("No products found with user filters")
+                return pd.DataFrame()
                 
         except Exception as e:
-            logger.error(f"❌ Error in pre-filtered product query: {e}")
-            logger.info("🔄 Falling back to chunked loading...")
-            return self.get_products()
-
+            logger.error(f"❌ get_products_with_user_filters failed: {e}")
+            return pd.DataFrame()
+    
     def create_similar_products_table(self) -> bool:
         """
         Create the similar_products table if it doesn't exist.
@@ -1173,6 +1104,99 @@ class SupabaseDB:
         except Exception as e:
             logger.error(f"❌ Error cleaning expired cache: {e}")
             return 0
+
+    def get_products_by_type_with_filters(self, user_data: Dict, product_types: List[str], wear_category: str = None) -> pd.DataFrame:
+        """Get products filtered by specific product types and user preferences for FAISS processing."""
+        try:
+            logger.info(f"🔍 Starting get_products_by_type_with_filters for {wear_category}...")
+            
+            # Extract user preferences
+            gender = user_data.get('Gender', '').lower()
+            style_preferences = user_data.get('style_preferences', [])
+            color_preferences = user_data.get('color_preferences', [])
+            
+            logger.info(f"Product type filters: {product_types}, Gender: {gender}, Styles: {len(style_preferences)}, Colors: {len(color_preferences)}")
+            
+            # ✅ OPTIMIZATION: Only select essential columns
+            needed_columns = [
+                'id', 'title', 'product_type', 'gender',
+                'primary_style', 'primary_color', 'image_url',
+                'full_caption', 'product_embedding', 'scraped_category'
+            ]
+            
+            # Build base query with specific columns
+            query = self.client.table('tagged_products').select(','.join(needed_columns))
+            
+            # Apply gender filter
+            if gender in ['male', 'female']:
+                query = query.eq('gender', gender.capitalize())
+                logger.info(f"Applied gender filter: {gender.capitalize()}")
+            
+            # Apply product type filter
+            if product_types:
+                type_conditions = []
+                for product_type in product_types:
+                    type_conditions.append(f"product_type.ilike.%{product_type}%")
+                
+                if type_conditions:
+                    query = query.or_(','.join(type_conditions))
+                    logger.info(f"Applied product type filters: {len(product_types)} types")
+            
+            # Apply limit to avoid timeouts
+            query = query.limit(2000)  # Conservative limit for type-specific queries
+            
+            # Execute query
+            result = query.execute()
+            
+            if result.data:
+                products_df = pd.DataFrame(result.data)
+                logger.info(f"✅ get_products_by_type_with_filters: {len(products_df)} products for {wear_category}")
+                return self._process_products_dataframe(products_df)
+            else:
+                logger.warning(f"No products found for {wear_category} with type filters")
+                return pd.DataFrame()
+                
+        except Exception as e:
+            logger.error(f"❌ get_products_by_type_with_filters failed for {wear_category}: {e}")
+            return pd.DataFrame()
+
+    def get_products_simple(self, gender: str = None, limit: int = 500) -> pd.DataFrame:
+        """Get products with minimal filtering to avoid timeouts."""
+        try:
+            logger.info(f"🔍 Starting get_products_simple (gender: {gender}, limit: {limit})...")
+            
+            # ✅ ULTRA-OPTIMIZATION: Only select essential columns
+            needed_columns = [
+                'id', 'title', 'product_type', 'gender',
+                'primary_style', 'primary_color', 'image_url',
+                'full_caption', 'product_embedding', 'scraped_category'
+            ]
+            
+            # Build base query with specific columns
+            query = self.client.table('tagged_products').select(','.join(needed_columns))
+            
+            # Apply gender filter if specified
+            if gender:
+                query = query.eq('gender', gender.capitalize())
+                logger.info(f"Applied gender filter: {gender.capitalize()}")
+            
+            # Apply limit
+            query = query.limit(limit)
+            
+            # Execute query
+            result = query.execute()
+            
+            if result.data:
+                products_df = pd.DataFrame(result.data)
+                logger.info(f"✅ get_products_simple: {len(products_df)} products")
+                return self._process_products_dataframe(products_df)
+            else:
+                logger.warning("No products found with simple filtering")
+                return pd.DataFrame()
+                
+        except Exception as e:
+            logger.error(f"❌ get_products_simple failed: {e}")
+            return pd.DataFrame()
 
 # Global database instance
 db = SupabaseDB()
