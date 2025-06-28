@@ -792,37 +792,44 @@ class SupabaseDB:
             # Build base query with specific columns
             query = self.client.table('tagged_products').select(','.join(needed_columns))
             
-            # ✅ OPTIMIZATION: Add limit to avoid timeouts
-            query = query.limit(10000)  # Limit to 10000 products for faster response
+            # ✅ FIX: Reduce limit to prevent timeouts - use a more conservative limit
+            query = query.limit(5000)  # Reduced from 10000 to 5000 for faster response
             
-            # Apply gender filter
+            # Apply gender filter first (most restrictive filter)
             if gender in ['male', 'female']:
                 query = query.eq('gender', gender.capitalize())
                 logger.info(f"Applied gender filter: {gender.capitalize()}")
             
-            # ✅ FIXED: Only use columns that actually exist
-            # Apply style preferences if available (only use primary_style, not primary_style_category)
-            if style_preferences:
+            # ✅ OPTIMIZATION: Apply style filters only if we have a reasonable number
+            if style_preferences and len(style_preferences) <= 5:  # Limit to 5 styles max
                 style_conditions = []
-                for style in style_preferences:
+                for style in style_preferences[:5]:  # Take only first 5 styles
                     style_conditions.append(f"primary_style.ilike.%{style}%")
                 
                 if style_conditions:
                     query = query.or_(','.join(style_conditions))
-                    logger.info(f"Applied style filters: {len(style_preferences)} styles")
+                    logger.info(f"Applied style filters: {len(style_preferences[:5])} styles")
             
-            # Apply color preferences if available
-            if color_preferences:
+            # ✅ OPTIMIZATION: Apply color filters only if we have a reasonable number
+            if color_preferences and len(color_preferences) <= 5:  # Limit to 5 colors max
                 color_conditions = []
-                for color in color_preferences:
+                for color in color_preferences[:5]:  # Take only first 5 colors
                     color_conditions.append(f"primary_color.ilike.%{color}%")
                 
                 if color_conditions:
                     query = query.or_(','.join(color_conditions))
-                    logger.info(f"Applied color filters: {len(color_preferences)} colors")
+                    logger.info(f"Applied color filters: {len(color_preferences[:5])} colors")
             
-            # Execute query
-            result = query.execute()
+            # Execute query with timeout handling
+            try:
+                result = query.execute()
+            except Exception as query_error:
+                logger.warning(f"⚠️ Query failed with filters, trying without style/color filters: {query_error}")
+                # Fallback: try without style and color filters
+                query = self.client.table('tagged_products').select(','.join(needed_columns)).limit(5000)
+                if gender in ['male', 'female']:
+                    query = query.eq('gender', gender.capitalize())
+                result = query.execute()
             
             if result.data:
                 products_df = pd.DataFrame(result.data)
@@ -834,6 +841,7 @@ class SupabaseDB:
                 
         except Exception as e:
             logger.error(f"❌ get_products_with_user_filters failed: {e}")
+            # Return empty DataFrame instead of failing completely
             return pd.DataFrame()
     
     def create_similar_products_table(self) -> bool:
