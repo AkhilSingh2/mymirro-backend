@@ -436,6 +436,26 @@ class OutfitGeneration(Resource):
                         'data_source': 'existing_database'
                     }, 200
             
+            # ✅ FIX: Delete old outfits if regenerating
+            if regenerate:
+                logger.info(f"🔄 Regenerating outfits for user {user_id} - deleting old outfits first")
+                db = SupabaseDB()
+                try:
+                    # Delete all existing outfits for this user
+                    result = db.client.table('user_outfits').delete().eq('user_id', user_id).execute()
+                    deleted_count = len(result.data) if result.data else 0
+                    logger.info(f"🗑️ Deleted {deleted_count} old outfits for user {user_id}")
+                    
+                    # Also delete by main_outfit_id pattern to be thorough
+                    result2 = db.client.table('user_outfits').delete().like('main_outfit_id', f'main_{user_id}_%').execute()
+                    deleted_count2 = len(result2.data) if result2.data else 0
+                    if deleted_count2 > 0:
+                        logger.info(f"🗑️ Deleted additional {deleted_count2} outfits by ID pattern for user {user_id}")
+                        
+                except Exception as e:
+                    logger.warning(f"⚠️ Error deleting old outfits: {e}")
+                    # Continue with generation anyway
+            
             # Generate outfits with Railway CPU management
             if IS_RAILWAY:
                 # Apply CPU limits during generation
@@ -840,7 +860,7 @@ class SimilarProducts(Resource):
                 try:
                     logger.info("🔄 Auto-initializing similar products models on first use...")
                     # Use the globally imported class instead of re-importing
-                    test_generator = SimilarProductsGenerator()
+                    generator = SimilarProductsGenerator(db=SupabaseDB(), is_railway=os.getenv('RAILWAY_ENVIRONMENT') is not None)
                     _similar_products_ready = True
                     logger.info("✅ Similar products models auto-initialized successfully")
                 except Exception as e:
@@ -898,7 +918,7 @@ class SimilarProducts(Resource):
             
             try:
                 # Initialize Phase 3 generator first (this is usually fast)
-                generator = SimilarProductsGenerator()
+                generator = SimilarProductsGenerator(db=SupabaseDB(), is_railway=os.getenv('RAILWAY_ENVIRONMENT') is not None)
                 logger.info(f"🔍 Finding {count} similar products for product {product_id}")
                 logger.info(f"   Diverse: {diverse}, Personalized: {personalized}")
                 
@@ -1389,9 +1409,9 @@ class ModelWarmup(Resource):
             if SIMILAR_PRODUCTS_AVAILABLE and not _similar_products_ready:
                 try:
                     # Use the globally imported class instead of re-importing
-                    generator = SimilarProductsGenerator()
+                    generator = SimilarProductsGenerator(db=SupabaseDB(), is_railway=os.getenv('RAILWAY_ENVIRONMENT') is not None)
                     # Try a quick initialization
-                    logger.info("🔥 Warming up similar products models...")
+                    logger.info("🔄 Warming up similar products models...")
                     _similar_products_ready = True
                     logger.info("✅ Similar products models ready")
                 except Exception as e:
@@ -1468,7 +1488,7 @@ class ImportDebug(Resource):
             # Try to instantiate
             if SIMILAR_PRODUCTS_AVAILABLE:
                 try:
-                    generator = SimilarProductsGenerator()
+                    generator = SimilarProductsGenerator(db=SupabaseDB(), is_railway=os.getenv('RAILWAY_ENVIRONMENT') is not None)
                     results['phase3_instantiate'] = 'SUCCESS'
                 except Exception as e:
                     results['phase3_instantiate'] = f'FAILED: {str(e)}'
@@ -1496,20 +1516,25 @@ class DebugProducts(Resource):
             if products_df.empty:
                 return {'success': False, 'products': [], 'message': 'No products found.'}, 200
             
-            # Check if product 2859 exists
+            # Check if product 2859 exists using available columns
             product_2859_exists = False
-            if 'id' in products_df.columns:
+            if 'product_id' in products_df.columns:
+                product_ids = products_df['product_id'].astype(str).tolist()
+                product_2859_exists = '2859' in product_ids
+            elif 'id' in products_df.columns:
                 product_ids = products_df['id'].astype(str).tolist()
                 product_2859_exists = '2859' in product_ids
             
             # Return first 20 for display, but include the check result
-            products = products_df[['id', 'title']].head(20).fillna('').to_dict(orient='records')
+            display_columns = ['id', 'title'] if 'id' in products_df.columns else ['product_id', 'title']
+            products = products_df[display_columns].head(20).fillna('').to_dict(orient='records')
             return {
                 'success': True, 
                 'products': products, 
                 'count': len(products_df),
                 'product_2859_exists': product_2859_exists,
-                'total_products_checked': len(products_df)
+                'total_products_checked': len(products_df),
+                'columns_available': list(products_df.columns)
             }, 200
         except Exception as e:
             return {'success': False, 'error': str(e)}, 500

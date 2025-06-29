@@ -80,18 +80,14 @@ class SupabaseSimilarOutfitsGenerator:
             'semantic_weight': 4.0,           # Core AI matching
             'style_harmony_weight': 3.5,      # Advanced style compatibility  
             'color_harmony_weight': 3.0,      # Sophisticated color theory
-            'formality_weight': 2.5,          # Style formality matching
             'pattern_compatibility_weight': 2.0,  # Pattern mixing intelligence
-            'seasonal_weight': 1.5,           # Seasonal appropriateness
-            'price_similarity_weight': 1.8,   # Price range compatibility
             'occasion_weight': 2.2,           # Occasion-specific matching
             'diversity_bonus': 0.8,           # Encourage variety in results
-            'confidence_threshold': 0.4,      # Minimum similarity threshold
-            'price_tolerance': 0.35,          # ±35% price range tolerance
-            'formality_tolerance': 2,         # ±2 levels in formality scale
+            'confidence_threshold': 0.1,      # ✅ FIX: Lowered for more outfits
             'min_similar_outfits': 5,         # Minimum outfits to return
             'max_similar_outfits': 20,        # Maximum outfits to return
-            'candidate_pool_size': 150        # ✅ OPTIMIZATION: Reduced from 300 to 150 for faster processing
+            'candidate_pool_size': 500,       # ✅ FIX: Increased for more candidates
+            'fallback_strategy': 'best_available'  # ✅ NEW: Best Available fallback
         }
         
         # Advanced fashion intelligence systems
@@ -412,14 +408,14 @@ class SupabaseSimilarOutfitsGenerator:
     
     def validate_products_data(self, products_df: pd.DataFrame) -> pd.DataFrame:
         """Validate, clean, and enhance products data with proper price mapping."""
-        required_columns = ["title", "wear_type", "gender"]
+        required_columns = ["title", "product_type", "gender"]
         missing_columns = [col for col in required_columns if col not in products_df.columns]
         
         if missing_columns:
             raise ValueError(f"Missing required columns in products data: {missing_columns}")
         
         # Clean data
-        products_df = products_df.dropna(subset=["title", "wear_type"])
+        products_df = products_df.dropna(subset=["title", "product_type"])
         
         # ✅ CRITICAL FIX: Merge actual price data from scraped products
         try:
@@ -433,22 +429,22 @@ class SupabaseSimilarOutfitsGenerator:
                 
                 # Map prices using product ID
                 def get_actual_price(row):
-                    product_id = str(row.get('id', ''))
+                    product_id = str(row.get('product_id', ''))
                     if product_id in price_dict:
                         return float(price_dict[product_id])
                     
-                    # Smart default pricing based on wear_type and style
-                    wear_type = row.get('wear_type', '')
+                    # Smart default pricing based on product_type and style
+                    product_type = row.get('product_type', '')
                     style = row.get('enhanced_primary_style', row.get('primary_style', ''))
                     
-                    if wear_type == 'Upperwear':
+                    if product_type.lower() in ['t-shirt', 'shirt', 'top', 'blouse', 'sweater', 'hoodie']:
                         if any(x in style.lower() for x in ['formal', 'business', 'blazer']):
                             return 2500
                         elif any(x in style.lower() for x in ['casual', 't-shirt', 'tank']):
                             return 800
                         else:
                             return 1500
-                    elif wear_type == 'Bottomwear':
+                    elif product_type.lower() in ['trousers', 'pants', 'jeans', 'shorts', 'skirt']:
                         if any(x in style.lower() for x in ['formal', 'trouser', 'chino']):
                             return 2000
                         elif any(x in style.lower() for x in ['casual', 'jeans', 'short']):
@@ -461,7 +457,7 @@ class SupabaseSimilarOutfitsGenerator:
                 logger.info(f"✅ Loaded {len(price_dict)} price mappings from scraped data")
                 
         except Exception as e:
-            logger.warning(f"Could not load scraped prices: {e}, using defaults")
+            logger.warning(f"⚠️ Could not load price mappings: {e}")
             products_df['price'] = products_df.get('price', 1000)
         
         # Ensure we have caption data for FAISS
@@ -530,37 +526,62 @@ class SupabaseSimilarOutfitsGenerator:
     def build_faiss_indexes(self, products_df: pd.DataFrame) -> None:
         """Build FAISS indexes for different wear types using precomputed embeddings from database."""
         logger.info("Building FAISS indexes for similar outfit search...")
-        
-        # ✅ OPTIMIZATION: Ensure model is loaded
         self._ensure_model_loaded()
-        
-        # Railway CPU optimization for FAISS indexing
         if self.is_railway:
             logger.info("🏭 Applying Railway CPU limits for FAISS indexing operations")
             for var in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'OPENBLAS_NUM_THREADS']:
-                os.environ[var] = '1'  # Extra conservative for FAISS operations
+                os.environ[var] = '1'
         
-        wear_types = ['Upperwear', 'Bottomwear']
+        # ✅ FIX: Use product_type to categorize as topwear/bottomwear instead of non-existent wear_type
+        def categorize_wear_type(product_type):
+            """Categorize product type as topwear or bottomwear."""
+            topwear_keywords = [
+                'shirt', 't-shirt', 'polo', 'henley', 'tank', 'crop', 'sleeveless', 
+                'blouse', 'tunic', 'sweater', 'hoodie', 'jacket', 'blazer', 'cardigan',
+                'coat', 'vest', 'top', 'tee', 'tshirt'
+            ]
+            bottomwear_keywords = [
+                'pants', 'jeans', 'shorts', 'chinos', 'trousers', 'slacks', 'dress_pants',
+                'casual_pants', 'formal_pants', 'joggers', 'leggings', 'skirt', 'dress',
+                'jumpsuit', 'overall', 'denim', 'cargo', 'khaki', 'sweatpants'
+            ]
+            
+            product_type_lower = product_type.lower()
+            
+            # Check for topwear keywords
+            if any(keyword in product_type_lower for keyword in topwear_keywords):
+                return 'Upperwear'
+            # Check for bottomwear keywords
+            elif any(keyword in product_type_lower for keyword in bottomwear_keywords):
+                return 'Bottomwear'
+            else:
+                # Default categorization based on common patterns
+                if any(word in product_type_lower for word in ['shirt', 'top', 'tee', 'blouse']):
+                    return 'Upperwear'
+                elif any(word in product_type_lower for word in ['pants', 'shorts', 'jeans', 'skirt']):
+                    return 'Bottomwear'
+                else:
+                    return 'Other'
+        
+        # Add wear_type column based on product_type
+        products_df['wear_type'] = products_df['product_type'].apply(categorize_wear_type)
+        
+        # Use unique wear types
+        wear_types = products_df['wear_type'].dropna().unique()
+        logger.info(f"🔍 Found wear types: {wear_types}")
         
         for wear_type in wear_types:
-            wear_products = products_df[products_df['wear_type'] == wear_type].copy()
-            
-            if wear_products.empty:
+            type_products = products_df[products_df['wear_type'] == wear_type].copy()
+            if type_products.empty:
                 logger.warning(f"No products found for wear_type: {wear_type}")
                 continue
-            
-            # ✅ OPTIMIZATION: Try to use precomputed embeddings first
             embeddings = []
             product_indices = []
             missing_embeddings = []
-            
-            for idx, row in wear_products.iterrows():
-                product_id = str(row['id'])
-                
-                # Check if precomputed embedding exists
+            for idx, row in type_products.iterrows():
+                product_id = str(row.get('product_id', ''))
                 if 'product_embedding' in row and pd.notna(row['product_embedding']):
                     try:
-                        # Parse the stored embedding
                         import json
                         embedding_list = json.loads(row['product_embedding'])
                         embedding = np.array(embedding_list, dtype=np.float32)
@@ -569,51 +590,33 @@ class SupabaseSimilarOutfitsGenerator:
                         continue
                     except Exception as e:
                         logger.warning(f"Failed to parse embedding for product {product_id}: {e}")
-                
-                # Fallback: compute embedding on-the-fly
                 caption = row.get('full_caption', '') or row.get('final_caption', '') or row.get('title', '')
                 if caption.strip():
                     missing_embeddings.append((idx, caption))
-            
-            # Compute missing embeddings if any
             if missing_embeddings:
                 logger.info(f"Computing {len(missing_embeddings)} missing embeddings for {wear_type}...")
-                
                 missing_indices, missing_captions = zip(*missing_embeddings)
-                
-                # Batch compute missing embeddings
                 batch_size = min(50, len(missing_captions))
                 for i in range(0, len(missing_captions), batch_size):
                     batch_captions = missing_captions[i:i + batch_size]
                     batch_embeddings = self.model.encode(batch_captions, show_progress_bar=False)
-                    
                     for j, embedding in enumerate(batch_embeddings):
                         embeddings.append(embedding)
                         product_indices.append(missing_indices[i + j])
-            
             if not embeddings:
                 logger.warning(f"No valid embeddings found for wear_type: {wear_type}")
                 continue
-            
             logger.info(f"Using {len(embeddings)} embeddings for {wear_type} (precomputed: {len(embeddings) - len(missing_embeddings)}, computed: {len(missing_embeddings)})")
-            
             embeddings = np.array(embeddings)
-            
-            # Build FAISS index
             dimension = embeddings.shape[1]
             index = faiss.IndexFlatIP(dimension)
-            
-            # Normalize embeddings for cosine similarity
             embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
             index.add(embeddings.astype('float32'))
-            
-            # Store index and mapping
             self.faiss_indexes[wear_type] = index
             self.product_mappings[wear_type] = {
                 'indices': product_indices,
-                'products': wear_products.iloc[[wear_products.index.get_loc(idx) for idx in product_indices]].copy()
+                'products': type_products.iloc[[type_products.index.get_loc(idx) for idx in product_indices]].copy()
             }
-            
             logger.info(f"Built FAISS index for {wear_type}: {len(embeddings)} products indexed (PRECOMPUTED)")
     
     def load_outfit_from_supabase(self, main_outfit_id: str) -> Dict:
@@ -650,114 +653,43 @@ class SupabaseSimilarOutfitsGenerator:
             raise
     
     def load_products_from_supabase(self, user_data: Dict = None, exclude_outfit_ids: List[str] = None, main_outfit_product_types: List[str] = None) -> pd.DataFrame:
-        """Load products data from Supabase database with gender-based filtering and exclusion of main outfit products."""
+        """Load ALL products data from Supabase database with proper filtering."""
         try:
-            logger.info("Loading products from Supabase...")
+            logger.info("Loading ALL products from Supabase (no limit)...")
+            products_df = self.db.get_products_phase2()
             
-            # ✅ OPTIMIZATION: Use cached products if available
-            cache_key = f"products_{user_data.get('gender', 'all')}_{hash(str(exclude_outfit_ids))}_{hash(str(main_outfit_product_types))}"
-            if hasattr(self, '_products_cache') and cache_key in self._products_cache:
-                logger.info("✅ Using cached products data")
-                return self._products_cache[cache_key]
+            # ✅ FIX: Add gender filtering to match main outfit's user
+            if user_data and user_data.get('Gender'):
+                user_gender = user_data['Gender'].lower()
+                logger.info(f"🔍 Filtering products by user gender: {user_gender}")
+                products_df = products_df[products_df['gender'].str.lower() == user_gender]
+                logger.info(f"✅ After gender filtering: {len(products_df)} products remaining")
             
-            # ✅ NEW OPTIMIZATION: Load products by type for better FAISS performance
-            if main_outfit_product_types and len(main_outfit_product_types) >= 2:
-                logger.info(f"🔍 Loading products by type for FAISS optimization: {main_outfit_product_types}")
-                
-                # Get top and bottom product types
-                top_product_type = main_outfit_product_types[0] if len(main_outfit_product_types) > 0 else None
-                bottom_product_type = main_outfit_product_types[1] if len(main_outfit_product_types) > 1 else None
-                
+            # ✅ FIX: Add product type filtering to match main outfit's product types
+            if main_outfit_product_types:
+                logger.info(f"🔍 Filtering products by main outfit product types: {main_outfit_product_types}")
                 # Get related product types for diversity
-                related_top_types = self._get_related_product_types([top_product_type]) if top_product_type else []
-                related_bottom_types = self._get_related_product_types([bottom_product_type]) if bottom_product_type else []
+                related_types = self._get_related_product_types(main_outfit_product_types)
+                all_allowed_types = main_outfit_product_types + related_types
+                logger.info(f"🔍 Allowed product types: {all_allowed_types}")
                 
-                logger.info(f"Top product type: {top_product_type}, Related: {related_top_types}")
-                logger.info(f"Bottom product type: {bottom_product_type}, Related: {related_bottom_types}")
-                
-                # Load upperwear products (same type + related types)
-                upperwear_types = [top_product_type] + related_top_types if top_product_type else []
-                upperwear_products = pd.DataFrame()
-                if upperwear_types:
-                    try:
-                        upperwear_products = self.db.get_products_by_type_with_filters(
-                            user_data, upperwear_types, "Upperwear"
-                        )
-                        logger.info(f"Loaded {len(upperwear_products)} upperwear products")
-                    except Exception as e:
-                        logger.warning(f"Failed to load upperwear products: {e}")
-                
-                # Load bottomwear products (same type + related types)
-                bottomwear_types = [bottom_product_type] + related_bottom_types if bottom_product_type else []
-                bottomwear_products = pd.DataFrame()
-                if bottomwear_types:
-                    try:
-                        bottomwear_products = self.db.get_products_by_type_with_filters(
-                            user_data, bottomwear_types, "Bottomwear"
-                        )
-                        logger.info(f"Loaded {len(bottomwear_products)} bottomwear products")
-                    except Exception as e:
-                        logger.warning(f"Failed to load bottomwear products: {e}")
-                
-                # Combine products
-                products_df = pd.concat([upperwear_products, bottomwear_products], ignore_index=True)
-                logger.info(f"Combined dataset: {len(products_df)} products (upperwear: {len(upperwear_products)}, bottomwear: {len(bottomwear_products)})")
-                
-            else:
-                # Fallback to original method if product types not available
-                logger.warning("Product types not available, using fallback loading method")
-                max_products = 500  # Further reduced limit for faster processing
-                
-                if user_data:
-                    # Use gender-based filtering similar to Phase 1
-                    logger.info(f"Applying gender-based filtering for user gender: {user_data.get('gender', 'unknown')}")
-                    try:
-                        products_df = self.db.get_products_with_user_filters(user_data)
-                        
-                        # Limit products for faster processing
-                        if len(products_df) > max_products:
-                            logger.info(f"Limiting products from {len(products_df)} to {max_products} for faster processing")
-                            products_df = products_df.head(max_products)
-                    except Exception as e:
-                        logger.error(f"Failed to load products with user filters: {e}")
-                        # Fallback to simple product loading
-                        try:
-                            gender = user_data.get('Gender', '').lower()
-                            products_df = self.db.get_products_simple(gender=gender, limit=max_products)
-                        except Exception as e2:
-                            logger.error(f"Failed to load products with simple method: {e2}")
-                            products_df = pd.DataFrame()
-                else:
-                    # Fallback to a smaller sample of all products
-                    logger.warning("No user data provided, loading sample of products for faster processing")
-                    try:
-                        products_df = self.db.get_products_simple(limit=max_products)
-                    except Exception as e:
-                        logger.error(f"Failed to load products with simple method: {e}")
-                        products_df = pd.DataFrame()
+                # Filter products by allowed product types
+                products_df = products_df[products_df['product_type'].isin(all_allowed_types)]
+                logger.info(f"✅ After product type filtering: {len(products_df)} products remaining")
             
-            # ✅ FIXED: Only exclude the exact same product IDs, NOT product types
             if exclude_outfit_ids:
                 logger.info(f"Excluding {len(exclude_outfit_ids)} main outfit products (exact IDs only)")
-                products_df = products_df[~products_df['id'].isin(exclude_outfit_ids)]
+                products_df = products_df[~products_df['product_id'].isin(exclude_outfit_ids)]
                 logger.info(f"After ID exclusion: {len(products_df)} products remaining")
             
-            # ✅ ENHANCED: Product type priority is now handled at database level
-            # No need for additional filtering since we already loaded by type
-            
-            # Shuffle for randomness while maintaining priority
             if len(products_df) > 0:
                 logger.info("Shuffling products while maintaining type priority...")
                 products_df = products_df.sample(frac=1, random_state=42).reset_index(drop=True)
-                logger.info(f"Final dataset: {len(products_df)} products available for FAISS")
-            
-            # ✅ OPTIMIZATION: Cache the result
-            if not hasattr(self, '_products_cache'):
-                self._products_cache = {}
-            self._products_cache[cache_key] = products_df.copy()
-            
-            return products_df
-            
+                logger.info(f"Final dataset: {len(products_df)} products ready for similar outfit generation")
+                return products_df
+            else:
+                logger.warning("⚠️ No products available after filtering")
+                return pd.DataFrame()
         except Exception as e:
             logger.error(f"Error loading products from Supabase: {e}")
             return pd.DataFrame()
@@ -918,7 +850,7 @@ class SupabaseSimilarOutfitsGenerator:
         scores['color_harmony'] = color_score
         explanations.append(f"Color harmony: {color_score:.3f}")
         
-        # 4. FORMALITY MATCHING
+        # 4. FORMALITY MATCHING (Simplified - no tolerance)
         source_top_formality = self.style_formality.get(source_top_style, 5)
         source_bottom_formality = self.style_formality.get(source_bottom_style, 5)
         candidate_top_formality = self.style_formality.get(candidate_top_style, 5)
@@ -928,7 +860,8 @@ class SupabaseSimilarOutfitsGenerator:
         candidate_avg_formality = (candidate_top_formality + candidate_bottom_formality) / 2
         
         formality_diff = abs(source_avg_formality - candidate_avg_formality)
-        formality_score = max(0, 1 - (formality_diff / self.similarity_config['formality_tolerance']))
+        # ✅ FIX: Simplified formality scoring without tolerance
+        formality_score = max(0.1, 1 - (formality_diff / 10))  # Gradual decrease
         
         scores['formality_matching'] = formality_score
         explanations.append(f"Formality match: {formality_score:.3f}")
@@ -956,15 +889,16 @@ class SupabaseSimilarOutfitsGenerator:
         scores['pattern_compatibility'] = pattern_score
         explanations.append(f"Pattern compatibility: {pattern_score:.3f}")
         
-        # 6. PRICE COMPATIBILITY 
+        # 6. PRICE COMPATIBILITY (Simplified - no tolerance)
         source_price = float(source_outfit.get('total_price', 0))
         candidate_price = float(candidate_outfit.get('total_price', 0))
         
-        if source_price > 0:
-            price_diff = abs(source_price - candidate_price) / source_price
-            price_score = max(0, 1 - (price_diff / self.similarity_config['price_tolerance']))
+        if source_price > 0 and candidate_price > 0:
+            # ✅ FIX: Simplified price scoring without tolerance
+            price_ratio = min(source_price, candidate_price) / max(source_price, candidate_price)
+            price_score = price_ratio  # Direct ratio (0.5 = 50% difference, 1.0 = same price)
         else:
-            price_score = 1.0
+            price_score = 0.8  # Neutral if missing data
         
         scores['price_similarity'] = price_score
         explanations.append(f"Price compatibility: {price_score:.3f}")
@@ -981,20 +915,20 @@ class SupabaseSimilarOutfitsGenerator:
         scores['occasion_matching'] = occasion_score
         explanations.append(f"Occasion match: {occasion_score:.3f}")
         
-        # 8. SEASONAL APPROPRIATENESS (if available)
-        # For now, give neutral score - will be enhanced with fashion designer input
-        scores['seasonal_appropriateness'] = 0.8
+        # 8. SEASONAL APPROPRIATENESS (Simplified)
+        # ✅ FIX: Simplified seasonal scoring
+        scores['seasonal_appropriateness'] = 0.8  # Neutral score
         
         # Calculate sophisticated weighted final score
         weighted_score = (
             scores['semantic_similarity'] * self.similarity_config['semantic_weight'] +
             scores['style_harmony'] * self.similarity_config['style_harmony_weight'] +
             scores['color_harmony'] * self.similarity_config['color_harmony_weight'] +
-            scores['formality_matching'] * self.similarity_config['formality_weight'] +
+            scores['formality_matching'] * 2.0 +  # ✅ FIX: Fixed weight
             scores['pattern_compatibility'] * self.similarity_config['pattern_compatibility_weight'] +
-            scores['price_similarity'] * self.similarity_config['price_similarity_weight'] +
+            scores['price_similarity'] * 1.5 +  # ✅ FIX: Fixed weight
             scores['occasion_matching'] * self.similarity_config['occasion_weight'] +
-            scores['seasonal_appropriateness'] * self.similarity_config['seasonal_weight']
+            scores['seasonal_appropriateness'] * 1.0  # ✅ FIX: Fixed weight
         )
         
         # Normalize by total weights
@@ -1002,14 +936,18 @@ class SupabaseSimilarOutfitsGenerator:
             self.similarity_config['semantic_weight'] + 
             self.similarity_config['style_harmony_weight'] +
             self.similarity_config['color_harmony_weight'] +
-            self.similarity_config['formality_weight'] +
+            2.0 +  # formality weight
             self.similarity_config['pattern_compatibility_weight'] +
-            self.similarity_config['price_similarity_weight'] +
+            1.5 +  # price weight
             self.similarity_config['occasion_weight'] +
-            self.similarity_config['seasonal_weight']
+            1.0   # seasonal weight
         )
         
         final_score = weighted_score / total_weights
+        
+        # ✅ NEW: Best Available fallback - ensure minimum score for diversity
+        if self.similarity_config.get('fallback_strategy') == 'best_available':
+            final_score = max(final_score, 0.1)  # Minimum score to ensure inclusion
         
         # Add detailed breakdown for debugging
         scores['final_score'] = final_score
@@ -1094,19 +1032,19 @@ class SupabaseSimilarOutfitsGenerator:
             # Get product types of main outfit products to exclude same types
             main_outfit_product_types = []
             if main_top_id and main_bottom_id:
-                # Get product types from the database
-                top_result = self.db.client.table('tagged_products').select('product_type').eq('id', main_top_id).execute()
-                bottom_result = self.db.client.table('tagged_products').select('product_type').eq('id', main_bottom_id).execute()
+                # ✅ FIX: Use product_id instead of id for queries
+                top_result = self.db.client.table('tagged_products').select('product_type').eq('product_id', main_top_id).execute()
+                bottom_result = self.db.client.table('tagged_products').select('product_type').eq('product_id', main_bottom_id).execute()
                 
                 if top_result.data:
                     main_outfit_product_types.append(top_result.data[0].get('product_type'))
                 if bottom_result.data:
                     main_outfit_product_types.append(bottom_result.data[0].get('product_type'))
                 
-                logger.info(f"📊 Product type queries: {len(main_outfit_product_types)} types found")
+                logger.info(f"📊 Main outfit product types: {main_outfit_product_types}")
             
             logger.info(f"Excluding main outfit products: top_id={main_top_id}, bottom_id={main_bottom_id}")
-            logger.info(f"Prioritizing product types: {main_outfit_product_types}")
+            logger.info(f"Main outfit product types: {main_outfit_product_types}")
             
             # Stage 2: Load and filter products
             products_df = self.load_products_from_supabase(user_data, exclude_outfit_ids, main_outfit_product_types)
@@ -1133,7 +1071,7 @@ class SupabaseSimilarOutfitsGenerator:
             return []
     
     def generate_candidate_outfits(self, source_outfit: Dict, products_df: pd.DataFrame) -> List[Dict]:
-        """Generate candidate outfits for similarity comparison."""
+        """Generate candidate outfits for similarity comparison with proper product type filtering."""
         
         candidates = []
         
@@ -1141,13 +1079,45 @@ class SupabaseSimilarOutfitsGenerator:
         source_top_id = source_outfit.get('top_id', '')
         source_bottom_id = source_outfit.get('bottom_id', '')
         
+        # ✅ FIX: Get source outfit product types for better filtering
+        source_top_type = None
+        source_bottom_type = None
+        
+        if source_top_id:
+            top_result = self.db.client.table('tagged_products').select('product_type').eq('product_id', source_top_id).execute()
+            if top_result.data:
+                source_top_type = top_result.data[0].get('product_type')
+        
+        if source_bottom_id:
+            bottom_result = self.db.client.table('tagged_products').select('product_type').eq('product_id', source_bottom_id).execute()
+            if bottom_result.data:
+                source_bottom_type = bottom_result.data[0].get('product_type')
+        
+        logger.info(f"🔍 Source outfit types - Top: {source_top_type}, Bottom: {source_bottom_type}")
+        
         # Use FAISS to find similar tops and bottoms separately
         source_top_title = source_outfit.get('top_title', '')
         source_bottom_title = source_outfit.get('bottom_title', '')
         
         # Find similar tops and bottoms with larger pool for better diversity
-        similar_tops = self.find_similar_products(source_top_title, 'Upperwear', k=10)  # ✅ OPTIMIZATION: Reduced from 20 to 10
-        similar_bottoms = self.find_similar_products(source_bottom_title, 'Bottomwear', k=10)  # ✅ OPTIMIZATION: Reduced from 20 to 10
+        similar_tops = self.find_similar_products(source_top_title, 'Upperwear', k=15)  # Increased pool
+        similar_bottoms = self.find_similar_products(source_bottom_title, 'Bottomwear', k=15)  # Increased pool
+        
+        # ✅ FIX: Filter bottoms by product type to match source bottom type
+        if source_bottom_type:
+            logger.info(f"🔍 Filtering bottoms to match source type: {source_bottom_type}")
+            filtered_bottoms = []
+            for bottom in similar_bottoms:
+                bottom_type = bottom['product'].get('product_type', '').lower()
+                source_bottom_type_lower = source_bottom_type.lower()
+                
+                # Exact match or related types
+                if (bottom_type == source_bottom_type_lower or 
+                    self._are_product_types_compatible(bottom_type, source_bottom_type_lower)):
+                    filtered_bottoms.append(bottom)
+            
+            similar_bottoms = filtered_bottoms
+            logger.info(f"✅ Filtered to {len(similar_bottoms)} compatible bottoms")
         
         # Generate outfit combinations with enhanced candidate pool
         combination_count = 0
@@ -1159,8 +1129,8 @@ class SupabaseSimilarOutfitsGenerator:
                     break
                 
                 # Skip if same as source outfit
-                if (top_candidate['product'].get('product_id', top_candidate['product'].get('id', '')) == source_top_id and 
-                    bottom_candidate['product'].get('product_id', bottom_candidate['product'].get('id', '')) == source_bottom_id):
+                if (top_candidate['product'].get('product_id', '') == source_top_id and
+                    bottom_candidate['product'].get('product_id', '') == source_bottom_id):
                     continue
                 
                 # Create candidate outfit
@@ -1180,38 +1150,27 @@ class SupabaseSimilarOutfitsGenerator:
     
     def find_similar_products(self, query_text: str, wear_type: str, k: int = 20) -> List[Dict]:
         """Find similar products using FAISS."""
-        
         if wear_type not in self.faiss_indexes:
             logger.warning(f"No FAISS index available for wear_type: {wear_type}")
             return []
-        
-        # Get query embedding
         query_embedding = self.get_embedding_cached(query_text)
         query_embedding = query_embedding.reshape(1, -1)
         query_embedding = query_embedding / np.linalg.norm(query_embedding, axis=1, keepdims=True)
-        
-        # Search FAISS index
         index = self.faiss_indexes[wear_type]
         scores, indices = index.search(query_embedding.astype('float32'), k)
-        
-        # Get corresponding products
         product_mapping = self.product_mappings[wear_type]
         candidates = []
-        
         for i, (score, faiss_idx) in enumerate(zip(scores[0], indices[0])):
             if faiss_idx >= len(product_mapping['indices']):
                 continue
-                
             product_idx = product_mapping['indices'][faiss_idx]
             product = product_mapping['products'].iloc[faiss_idx]
-            
             candidates.append({
                 'product_idx': product_idx,
                 'product': product,
                 'semantic_score': float(score),
                 'faiss_rank': i + 1
             })
-        
         return candidates
     
     def create_outfit_from_products(self, top_product: pd.Series, bottom_product: pd.Series) -> Dict:
@@ -1222,7 +1181,7 @@ class SupabaseSimilarOutfitsGenerator:
             outfit_description = self._generate_outfit_description(top_product, bottom_product, "Casual")
             
             outfit_data = {
-                'top_id': str(top_product['id']),
+                'top_id': str(top_product.get('product_id', '')),
                 'top_title': str(top_product.get('title', '')),
                 'top_image': str(top_product.get('image_url', '')),
                 'top_price': float(top_product.get('price', 1000.0)),
@@ -1230,7 +1189,7 @@ class SupabaseSimilarOutfitsGenerator:
                 'top_color': self._extract_color(top_product),
                 'top_semantic_score': 0.8,
                 
-                'bottom_id': str(bottom_product['id']),
+                'bottom_id': str(bottom_product.get('product_id', '')),
                 'bottom_title': str(bottom_product.get('title', '')),
                 'bottom_image': str(bottom_product.get('image_url', '')),
                 'bottom_price': float(bottom_product.get('price', 1000.0)),
@@ -1725,6 +1684,96 @@ class SupabaseSimilarOutfitsGenerator:
         except Exception as e:
             logger.error(f"Error building outfit name: {e}")
             return "URBAN SHIFT"
+
+    def _get_product_type_from_id(self, product_id: str) -> str:
+        """Get product type from product ID by querying the database."""
+        try:
+            if not product_id:
+                return 'T-Shirt'  # Default fallback
+            
+            # Query the database to get product type
+            result = self.db.client.table('tagged_products').select('product_type').eq('product_id', product_id).execute()
+            
+            if result.data:
+                return result.data[0].get('product_type', 'T-Shirt')
+            else:
+                logger.warning(f"Product {product_id} not found in database")
+                return 'T-Shirt'  # Default fallback
+                
+        except Exception as e:
+            logger.error(f"Error getting product type for {product_id}: {e}")
+            return 'T-Shirt'  # Default fallback
+    
+    def _map_to_broad_category(self, product_type: str) -> str:
+        """Map specific product types to broad categories (Upperwear/Bottomwear) for FAISS search."""
+        if not product_type:
+            return 'Upperwear'  # Default fallback
+        
+        # Define upperwear product types
+        upperwear_types = [
+            'T-Shirt', 'Shirt', 'Blouse', 'Top', 'Sweater', 'Hoodie', 'Jacket', 
+            'Blazer', 'Cardigan', 'Tank Top', 'Crop Top', 'Sleeveless', 'Tunic',
+            'Polo Shirt', 'Henley', 'Dress', 'Maxi Dress', 'Mini Dress', 'Gown'
+        ]
+        
+        # Define bottomwear product types
+        bottomwear_types = [
+            'Trousers', 'Jeans', 'Pants', 'Shorts', 'Skirt', 'Pencil Skirt',
+            'A-Line Skirt', 'Midi Skirt', 'Mini Skirt', 'Maxi Skirt', 'Joggers',
+            'Chinos', 'Dress Pants', 'Slacks', 'Cargos', 'Denim Pants', 'Denim Shorts'
+        ]
+        
+        # Check if product type is in upperwear or bottomwear categories
+        if product_type in upperwear_types:
+            return 'Upperwear'
+        elif product_type in bottomwear_types:
+            return 'Bottomwear'
+        else:
+            # If unknown, try to guess based on common patterns
+            product_type_lower = product_type.lower()
+            if any(word in product_type_lower for word in ['shirt', 'top', 'blouse', 'sweater', 'jacket', 'dress']):
+                return 'Upperwear'
+            elif any(word in product_type_lower for word in ['pants', 'trousers', 'jeans', 'shorts', 'skirt']):
+                return 'Bottomwear'
+            else:
+                logger.warning(f"Unknown product type '{product_type}', defaulting to Upperwear")
+                return 'Upperwear'  # Default fallback
+
+    def _are_product_types_compatible(self, type1: str, type2: str) -> bool:
+        """Check if two product types are compatible for recommendations."""
+        type1_lower = type1.lower()
+        type2_lower = type2.lower()
+        
+        # Define compatible product type groups
+        compatible_groups = {
+            # Shorts group
+            'shorts': ['shorts', 'denim_shorts', 'cargo_shorts', 'athletic_shorts'],
+            # Pants group
+            'pants': ['pants', 'casual_pants', 'formal_pants', 'dress_pants', 'trousers'],
+            # Jeans group
+            'jeans': ['jeans', 'denim_pants', 'skinny_jeans', 'straight_jeans'],
+            # Chinos group
+            'chinos': ['chinos', 'khaki_pants', 'casual_pants'],
+            # Joggers group
+            'joggers': ['joggers', 'sweatpants', 'athletic_pants'],
+            # T-shirts group
+            't-shirt': ['t-shirt', 'tshirt', 'tee', 'casual_shirt'],
+            # Shirts group
+            'shirt': ['shirt', 'casual_shirt', 'formal_shirt', 'polo_shirt'],
+            # Sweaters group
+            'sweater': ['sweater', 'cardigan', 'hoodie', 'pullover']
+        }
+        
+        # Check if types are in the same compatible group
+        for group_name, compatible_types in compatible_groups.items():
+            if type1_lower in compatible_types and type2_lower in compatible_types:
+                return True
+        
+        # Check if one type is a subset of another (e.g., "shorts" in "denim_shorts")
+        if type1_lower in type2_lower or type2_lower in type1_lower:
+            return True
+        
+        return False
 
 def score_candidates_batch(source_outfit: Dict, candidates_batch: List[Dict]) -> List[Dict]:
     """Score a batch of candidates (for parallel processing)."""
