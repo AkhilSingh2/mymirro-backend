@@ -1064,6 +1064,10 @@ class SupabaseSimilarOutfitsGenerator:
                 self.save_similar_outfits_to_database(outfit_id, similar_outfits)
             
             logger.info(f"✅ Found {len(similar_outfits)} similar outfits for {outfit_id}")
+            # Add similar_outfit_id and main_outfit_id to each result for API response
+            for i, outfit in enumerate(similar_outfits, 1):
+                outfit['similar_outfit_id'] = f"similar_{outfit_id.replace('main_', '')}_{i}"
+                outfit['main_outfit_id'] = outfit_id
             return similar_outfits
             
         except Exception as e:
