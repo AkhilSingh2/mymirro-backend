@@ -26,7 +26,7 @@ except ImportError:
     SENTENCE_TRANSFORMERS_AVAILABLE = False
 
 # Import Supabase database functionality
-from database import get_db
+from database import get_db, SupabaseDB
 from config import get_config
 
 # Setup logging
@@ -44,12 +44,12 @@ class SupabaseEnhancedSimilarProductsGenerator:
     _model_cache = None
     _model_cache_ready = False
     
-    def __init__(self, config: Dict = None):
+    def __init__(self, config: Dict = None, db: SupabaseDB = None, is_railway: bool = False):
         """Initialize the Supabase-enabled enhanced similar products generator."""
         self.config = config or self._default_config()
         
         # Railway CPU optimization - delay until needed
-        self.is_railway = os.getenv('RAILWAY_ENVIRONMENT') is not None
+        self.is_railway = is_railway
         if self.is_railway:
             logger.info("🏭 Railway environment detected - will apply CPU optimizations when needed")
         
@@ -63,7 +63,7 @@ class SupabaseEnhancedSimilarProductsGenerator:
             raise ImportError("sentence-transformers is required for similar products but not installed")
         
         # Initialize Supabase database connection
-        self.db = get_db()
+        self.db = db
         if not self.db.test_connection():
             logger.error("❌ Database connection failed. Please check your Supabase configuration.")
             raise ConnectionError("Failed to connect to Supabase database")
@@ -82,15 +82,16 @@ class SupabaseEnhancedSimilarProductsGenerator:
             'style_weight': 2.5,             # Style matching importance  
             'color_diversity_weight': 2.0,   # Color diversity bonus
             'design_diversity_weight': 1.8,  # Design diversity bonus
-            'outfit_context_weight': 2.8,    # NEW: Outfit context intelligence (Phase 1 derived)
+            'outfit_context_weight': 2.8,    # NEW: Outfit context intelligence
             'brand_weight': 1.2,             # Brand consistency (lower for diversity)
-            'price_weight': 2.0,             # Price similarity importance
             'user_preference_weight': 2.5,   # User preference boost
             'wear_caption_weight': 2.2,      # Lower/upper wear caption matching
             'diversity_bonus': 0.3,          # Bonus for diverse but relevant products
-            'min_similarity_score': 0.35,    # Lowered for more outfit context candidates
+            'min_similarity_score': 0.15,    # Lowered for more candidates (was 0.25)
             'max_similar_products': 20,      # Maximum products to return
-            'color_diversity_threshold': 0.7 # Threshold for color diversity bonus
+            'color_diversity_threshold': 0.7, # Threshold for color diversity bonus
+            'confidence_threshold': 0.2,      # Minimum similarity score for inclusion (lowered from 0.3)
+            'enable_diversity_filtering': False,  # Temporarily disable diversity filtering
         }
         
         # Initialize enhanced mappings (focused on same-category)
@@ -100,6 +101,10 @@ class SupabaseEnhancedSimilarProductsGenerator:
         
         # Load context mappings (outfit intelligence) if available
         self.context_mappings = {}
+        
+        self.current_product_id = None  # Track current product being processed
+        
+        logger.info("✅ Enhanced Similar Products Generator initialized")
         
     def _ensure_model_loaded(self):
         """Lazy load the model only when needed."""
@@ -135,7 +140,7 @@ class SupabaseEnhancedSimilarProductsGenerator:
             'enable_design_diversity': True,  # NEW: Encourage design diversity
             'enable_context_intelligence': True,  # NEW: Use outfit context intelligence
             'same_category_only': True,       # NEW: Strict same-category only
-            'diversity_threshold': 0.75,      # Similarity threshold for diversity filtering
+            'diversity_threshold': 0.2,      # Similarity threshold for diversity filtering (lowered from 0.4)
         }
     
     def _initialize_color_diversity_matrix(self) -> Dict:
@@ -225,15 +230,13 @@ class SupabaseEnhancedSimilarProductsGenerator:
         }
     
     def get_product_by_id_direct(self, product_id: str) -> Optional[pd.Series]:
-        """Directly fetch a specific product by ID from the database without loading all products."""
+        """Directly fetch a specific product by product_id from the database without loading all products."""
         try:
             logger.info(f"🔍 Directly fetching product {product_id} from database...")
-            
-            # Query only the specific product - use 'id' column which is the actual column name
+            # Query only the specific product - use 'product_id' column
             result = self.db.client.table('tagged_products').select(
-                'id,title,product_type,gender,primary_style,primary_color,image_url,full_caption,product_embedding,scraped_category,style_category'
-            ).eq('id', product_id).execute()
-            
+                'product_id,title,product_type,gender,primary_style,primary_color,image_url,full_caption,product_embedding,scraped_category,style_category'
+            ).eq('product_id', product_id).execute()
             if result.data and len(result.data) > 0:
                 product_data = result.data[0]
                 logger.info(f"✅ Found product {product_id} directly from database")
@@ -241,44 +244,163 @@ class SupabaseEnhancedSimilarProductsGenerator:
             else:
                 logger.warning(f"❌ Product {product_id} not found in database")
                 return None
-                
         except Exception as e:
             logger.error(f"❌ Error fetching product {product_id} directly: {e}")
             return None
 
-    def load_products_from_supabase(self, chunk_size: int = 1000, max_chunks: int = 100) -> pd.DataFrame:
-        """Load all products from Supabase in chunks to avoid timeouts and limits."""
+    def load_products_from_supabase(self, limit: int = None) -> pd.DataFrame:
+        """Load products from Supabase using chunked loading with smart filtering."""
         import pandas as pd
-        logger.info(f"Loading products from Supabase in chunks of {chunk_size}...")
-        all_products = []
-        offset = 0
-        chunk_num = 0
-        while True:
-            chunk_num += 1
-            if chunk_num > max_chunks:
-                logger.warning(f"Reached max_chunks={max_chunks}, stopping early.")
-                break
+        logger.info(f"Loading products from Supabase using chunked loading with smart filtering...")
+        
+        try:
+            # Get source product info first to determine filters
+            source_product = self.get_product_by_id_direct(self.current_product_id)
+            if source_product is None:
+                logger.error("❌ Cannot load products: source product not found")
+                return pd.DataFrame()
+            
+            # Extract filter criteria from source product
+            source_product_type = source_product.get('product_type', '').strip()  # Keep original case
+            source_gender = source_product.get('gender', '').strip()  # Keep original case
+            source_style_category = source_product.get('style_category', '').strip()  # Keep original case
+            
+            # Normalize style category: "Business/Formal" and "Business Casual" -> "Business Casual"
+            if source_style_category in ['Business/Formal', 'Business Casual']:
+                source_style_category = 'Business Casual'
+            
+            # DEBUG: Log the actual product data
+            logger.info(f"🔍 DEBUG: Source product data for {self.current_product_id}:")
+            logger.info(f"   product_type: '{source_product_type}'")
+            logger.info(f"   gender: '{source_gender}'")
+            logger.info(f"   style_category: '{source_style_category}'")
+            logger.info(f"   title: '{source_product.get('title', 'Unknown')}'")
+            
+            logger.info(f"🔍 Smart filtering by: product_type='{source_product_type}', gender='{source_gender}', style_category='{source_style_category}'")
+            
+            # TEMPORARILY: Try simple approach without chunking first
+            logger.info("🔄 TEMPORARILY: Loading all products with filters (no chunking)...")
+            
+            # FIRST: Test if we can query the database at all
+            logger.info("🔍 TESTING: Basic database query without filters...")
             try:
-                logger.info(f"🔍 Fetching chunk {chunk_num} (offset={offset})...")
-                chunk_df = self.db.get_products(limit=chunk_size, offset=offset)
-                if chunk_df is None or chunk_df.empty:
-                    logger.info(f"No more products found at offset {offset}.")
-                    break
-                all_products.append(chunk_df)
-                logger.info(f"✅ Loaded {len(chunk_df)} products in chunk {chunk_num} (offset={offset})")
-                if len(chunk_df) < chunk_size:
-                    logger.info(f"Last chunk ({chunk_num}) returned less than chunk_size; assuming end of data.")
-                    break
-                offset += chunk_size
+                test_query = self.db.client.table('tagged_products').select('id,title,product_type,gender,style_category').limit(5)
+                test_result = test_query.execute()
+                if test_result.data:
+                    logger.info(f"✅ Basic query works: found {len(test_result.data)} products")
+                    for product in test_result.data:
+                        logger.info(f"   Sample: id={product.get('id')}, title='{product.get('title')}', product_type='{product.get('product_type')}', gender='{product.get('gender')}', style_category='{product.get('style_category')}'")
+                else:
+                    logger.error("❌ Basic query failed: no products found")
+            except Exception as test_e:
+                logger.error(f"❌ Basic query failed: {test_e}")
+            
+            # SECOND: Test with exact product_type filter
+            logger.info(f"🔍 TESTING: Query with product_type='{source_product_type}' filter...")
+            try:
+                type_query = self.db.client.table('tagged_products').select('id,title,product_type,gender,style_category').eq('product_type', source_product_type).limit(5)
+                type_result = type_query.execute()
+                if type_result.data:
+                    logger.info(f"✅ Product type filter works: found {len(type_result.data)} products")
+                    for product in type_result.data:
+                        logger.info(f"   Sample: id={product.get('id')}, title='{product.get('title')}', gender='{product.get('gender')}', style_category='{product.get('style_category')}'")
+                else:
+                    logger.error(f"❌ Product type filter failed: no products with product_type='{source_product_type}'")
+            except Exception as type_e:
+                logger.error(f"❌ Product type filter failed: {type_e}")
+            
+            # THIRD: Test with exact gender filter
+            logger.info(f"🔍 TESTING: Query with gender='{source_gender}' filter...")
+            try:
+                gender_query = self.db.client.table('tagged_products').select('id,title,product_type,gender,style_category').eq('gender', source_gender).limit(5)
+                gender_result = gender_query.execute()
+                if gender_result.data:
+                    logger.info(f"✅ Gender filter works: found {len(gender_result.data)} products")
+                    for product in gender_result.data:
+                        logger.info(f"   Sample: id={product.get('id')}, title='{product.get('title')}', product_type='{product.get('product_type')}', style_category='{product.get('style_category')}'")
+                else:
+                    logger.error(f"❌ Gender filter failed: no products with gender='{source_gender}'")
+            except Exception as gender_e:
+                logger.error(f"❌ Gender filter failed: {gender_e}")
+            
+            # FOURTH: Test with style_category filter (including normalization)
+            logger.info(f"🔍 TESTING: Query with style_category='{source_style_category}' filter...")
+            try:
+                # Test both original and normalized style categories
+                style_query = self.db.client.table('tagged_products').select('id,title,product_type,gender,style_category').in_('style_category', [source_style_category, 'Business/Formal', 'Business Casual']).limit(5)
+                style_result = style_query.execute()
+                if style_result.data:
+                    logger.info(f"✅ Style category filter works: found {len(style_result.data)} products")
+                    for product in style_result.data:
+                        logger.info(f"   Sample: id={product.get('id')}, title='{product.get('title')}', product_type='{product.get('product_type')}', gender='{product.get('gender')}', style_category='{product.get('style_category')}'")
+                else:
+                    logger.error(f"❌ Style category filter failed: no products with style_category='{source_style_category}'")
+            except Exception as style_e:
+                logger.error(f"❌ Style category filter failed: {style_e}")
+            
+            try:
+                # Build query with smart filtering
+                query = self.db.client.table('tagged_products').select(
+                    'id,title,product_type,gender,primary_style,primary_color,image_url,full_caption,product_embedding,scraped_category,style_category'
+                )
+                
+                # Apply smart filters with exact case matching
+                if source_product_type:
+                    query = query.eq('product_type', source_product_type)
+                if source_gender:
+                    query = query.eq('gender', source_gender)
+                if source_style_category:
+                    # Handle style category normalization in the query
+                    if source_style_category == 'Business Casual':
+                        query = query.in_('style_category', ['Business/Formal', 'Business Casual'])
+                    else:
+                        query = query.eq('style_category', source_style_category)
+                
+                # Apply limit if specified
+                if limit:
+                    query = query.limit(limit)
+                
+                # DEBUG: Log the actual query being executed
+                logger.info(f"🔍 DEBUG: Executing query with filters: product_type='{source_product_type}', gender='{source_gender}', style_category='{source_style_category}', limit={limit}")
+                
+                # Execute query
+                result = query.execute()
+                
+                if result.data:
+                    all_products = result.data
+                    logger.info(f"✅ Successfully loaded {len(all_products)} products with filters")
+                else:
+                    logger.error("❌ No products found with filters")
+                    
             except Exception as e:
-                logger.error(f"❌ Error loading chunk {chunk_num} at offset {offset}: {e}")
-                break
-        if all_products:
-            products_df = pd.concat(all_products, ignore_index=True)
-            logger.info(f"✅ Successfully loaded {len(products_df)} total products from Supabase in {chunk_num} chunks.")
-            return products_df
-        else:
-            logger.error("❌ No products data available from Supabase after chunked loading.")
+                logger.error(f"❌ Error loading products with filters: {e}")
+                # Try without any filters as ultimate fallback
+                logger.info("🔄 Trying ultimate fallback: loading all products without any filters...")
+                try:
+                    fallback_query = self.db.client.table('tagged_products').select(
+                        'id,title,product_type,gender,primary_style,primary_color,image_url,full_caption,product_embedding,scraped_category,style_category'
+                    )
+                    if limit:
+                        fallback_query = fallback_query.limit(limit)
+                    fallback_result = fallback_query.execute()
+                    if fallback_result.data:
+                        all_products = fallback_result.data
+                        logger.info(f"✅ Ultimate fallback successful: loaded {len(all_products)} products")
+                    else:
+                        logger.error("❌ Ultimate fallback also failed: no products at all")
+                except Exception as ultimate_e:
+                    logger.error(f"❌ Ultimate fallback also failed: {ultimate_e}")
+            
+            if all_products:
+                products_df = pd.DataFrame(all_products)
+                logger.info(f"✅ Successfully loaded {len(products_df)} products using chunked loading with smart filtering.")
+                return products_df
+            else:
+                logger.error("❌ No products found with smart filtering")
+                return pd.DataFrame()
+                
+        except Exception as e:
+            logger.error(f"❌ Error in chunked product loading: {e}")
             return pd.DataFrame()
     
     def validate_products_data(self, products_df: pd.DataFrame) -> pd.DataFrame:
@@ -356,10 +478,19 @@ class SupabaseEnhancedSimilarProductsGenerator:
         logger.info(f"✅ Found source product: {source_product.get('title', 'Unknown')}")
 
         # 3. Load products for similarity search (REMOVED LIMIT for better coverage)
-        products_df = self.load_products_from_supabase(limit=None)  # Load all products
-        if products_df.empty:
-            logger.error("No products available from Supabase")
+        self.current_product_id = product_id
+        try:
+            products_df = self.load_products_from_supabase()  # Load all products
+            if products_df.empty:
+                logger.error("No products available from Supabase")
+                return []
+        except Exception as e:
+            logger.error(f"❌ Error loading products from Supabase: {e}")
+            logger.error(f"❌ Error type: {type(e)}")
+            import traceback
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return []
+        
         products_df = self.validate_products_data(products_df)
 
         # 4. Ensure source product has all required fields by processing it
@@ -376,40 +507,26 @@ class SupabaseEnhancedSimilarProductsGenerator:
         
         logger.info(f"🔍 Source product type: {source_product_type}, style category: {source_style_category}")
 
-        # 5. Pre-FAISS Filtering with strict same-category enforcement
+        # 5. Simple filtering with only essential filters: gender, product_type, style_category
         filtered_df = products_df.copy()
         logger.info(f"🔍 Starting filtering. Initial products: {len(filtered_df)}")
         
-        # ✅ ENHANCED: Strict same-category filtering
+        # ✅ SIMPLIFIED: Only apply the three essential filters
+        # 1. Product type filter (same category)
         if source_product_type:
             filtered_df = filtered_df[filtered_df['product_type'].str.lower() == source_product_type]
             logger.info(f"🔍 After product_type filter: {len(filtered_df)} products")
         
+        # 2. Style category filter (same category)
         if source_style_category:
             filtered_df = filtered_df[filtered_df['style_category'].str.lower() == source_style_category]
             logger.info(f"🔍 After style_category filter: {len(filtered_df)} products")
         
-        # Gender filter
+        # 3. Gender filter
         if user_preferences and user_preferences.get('gender'):
             gender = user_preferences['gender'].lower()
             filtered_df = filtered_df[filtered_df['gender'].str.lower().isin([gender, 'unisex'])]
             logger.info(f"🔍 After gender filter: {len(filtered_df)} products")
-        
-        # Additional filters
-        if filters:
-            if 'price_range' in filters:
-                min_price, max_price = filters['price_range']
-                filtered_df = filtered_df[(filtered_df['price'] >= min_price) & (filtered_df['price'] <= max_price)]
-                logger.info(f"🔍 After price_range filter: {len(filtered_df)} products")
-            if 'styles' in filters:
-                filtered_df = filtered_df[filtered_df['primary_style'].isin(filters['styles'])]
-                logger.info(f"🔍 After styles filter: {len(filtered_df)} products")
-            if 'colors' in filters:
-                filtered_df = filtered_df[filtered_df['primary_color'].isin(filters['colors'])]
-                logger.info(f"🔍 After colors filter: {len(filtered_df)} products")
-            if 'brand' in filters:
-                filtered_df = filtered_df[filtered_df['brand'] == filters['brand']]
-                logger.info(f"🔍 After brand filter: {len(filtered_df)} products")
         
         logger.info(f"🔍 Final filtered products: {len(filtered_df)}")
         
@@ -448,7 +565,7 @@ class SupabaseEnhancedSimilarProductsGenerator:
         all_candidates = []
         # 1. Core similar products (same category, similar features)
         core_candidates = self.search_similar_products_faiss(
-            source_text, source_product_type, k=40
+            source_text, source_product_type, k=100
         )
         for candidate in core_candidates:
             candidate['candidate_type'] = 'core_similar'
@@ -496,7 +613,7 @@ class SupabaseEnhancedSimilarProductsGenerator:
                     candidate['boost_factor'] = 1.1  # Slight boost for color diversity
                 candidates.extend(color_candidates)
         
-        return candidates[:15]  # Limit color diverse candidates
+        return candidates[:30]  # Limit color diverse candidates (increased from 15 to 30)
     
     def _get_design_diverse_candidates(self, source_product: pd.Series, products_df: pd.DataFrame, 
                                      user_preferences: Dict = None) -> List[Dict]:
@@ -522,7 +639,7 @@ class SupabaseEnhancedSimilarProductsGenerator:
                         candidate['boost_factor'] = 1.05  # Small boost for design diversity
                     candidates.extend(design_candidates)
         
-        return candidates[:10]  # Limit design diverse candidates
+        return candidates[:20]  # Limit design diverse candidates (increased from 10 to 20)
     
     def _get_user_preference_candidates(self, source_product: pd.Series, products_df: pd.DataFrame, 
                                       user_preferences: Dict) -> List[Dict]:
@@ -580,20 +697,16 @@ class SupabaseEnhancedSimilarProductsGenerator:
             candidate_product = candidate['product']
             candidate_id = str(candidate_product.get('product_id', ''))
             
-            # Skip duplicates and source product
             if candidate_id in seen_products or candidate_id == source_product_id:
                 continue
             
-            # Apply filters
             if filters and not self._passes_filters(candidate_product, filters):
                 continue
             
-            # Calculate enhanced similarity score with diversity factors
             similarity_score, score_breakdown = self._calculate_enhanced_same_category_similarity(
                 source_product, candidate_product, candidate, user_preferences
             )
             
-            # Apply minimum threshold
             if similarity_score < self.similarity_config['min_similarity_score']:
                 continue
             
@@ -616,10 +729,8 @@ class SupabaseEnhancedSimilarProductsGenerator:
             
             seen_products.add(candidate_id)
         
-        # Apply diversity filtering to avoid too similar products
         diverse_products = self._apply_same_category_diversity_filtering(similar_products, source_product)
         
-        # Sort by similarity score and return top matches
         diverse_products.sort(key=lambda x: x['similarity_score'], reverse=True)
         return diverse_products[:num_similar]
     
@@ -648,12 +759,6 @@ class SupabaseEnhancedSimilarProductsGenerator:
             candidate_product.get('title', '')
         )
         
-        # Price similarity
-        price_score = self._calculate_price_similarity_enhanced(
-            source_product.get('price', 1000),
-            candidate_product.get('price', 1000)
-        )
-        
         # User preference boost
         preference_score = 1.0
         if user_preferences:
@@ -671,14 +776,13 @@ class SupabaseEnhancedSimilarProductsGenerator:
             style_score * weights['style_weight'] +
             color_diversity_score * weights['color_diversity_weight'] +
             design_diversity_score * weights['design_diversity_weight'] +
-            price_score * weights['price_weight'] +
             preference_score * weights['user_preference_weight']
         ) * type_boost
         
         # Normalize to 0-1 range
         total_weight = (weights['semantic_weight'] + weights['style_weight'] + 
                        weights['color_diversity_weight'] + weights['design_diversity_weight'] + 
-                       weights['price_weight'] + weights['user_preference_weight'])
+                       weights['user_preference_weight'])
         
         final_score = min(final_score / total_weight, 1.0)
         
@@ -687,7 +791,6 @@ class SupabaseEnhancedSimilarProductsGenerator:
             'style_compatibility': style_score,
             'color_diversity': color_diversity_score,
             'design_diversity': design_diversity_score,
-            'price_similarity': price_score,
             'user_preference_boost': preference_score,
             'type_boost': type_boost,
             'final_score': final_score
@@ -755,28 +858,6 @@ class SupabaseEnhancedSimilarProductsGenerator:
         
         return 0.6  # Default design score
     
-    def _calculate_price_similarity_enhanced(self, price1: float, price2: float) -> float:
-        """Enhanced price similarity with dynamic tolerance."""
-        if not price1 or not price2:
-            return 0.5
-        
-        # Calculate percentage difference
-        avg_price = (price1 + price2) / 2
-        price_diff = abs(price1 - price2) / avg_price
-        
-        # Dynamic tolerance based on price range
-        if avg_price < 1000:
-            tolerance = 0.5  # Higher tolerance for lower prices
-        elif avg_price < 2000:
-            tolerance = 0.4
-        else:
-            tolerance = 0.3  # Stricter for higher prices
-        
-        if price_diff <= tolerance:
-            return 1.0 - (price_diff / tolerance) * 0.3  # 0.7 to 1.0 range
-        else:
-            return max(0.2, 0.7 - price_diff)  # Minimum 0.2
-    
     def _calculate_user_preference_boost(self, product: pd.Series, user_preferences: Dict) -> float:
         """Calculate boost based on user preferences."""
         boost = 1.0
@@ -793,19 +874,17 @@ class SupabaseEnhancedSimilarProductsGenerator:
         if product_color in preferred_colors:
             boost += 0.15
         
-        # Price range preferences
-        preferred_price_range = user_preferences.get('price_range')
-        if preferred_price_range:
-            min_price, max_price = preferred_price_range
-            product_price = product.get('price', 1000)
-            if min_price <= product_price <= max_price:
-                boost += 0.1
-        
         return min(boost, 1.4)  # Cap at 1.4x boost
     
     def _apply_same_category_diversity_filtering(self, similar_products: List[Dict], 
                                                source_product: pd.Series) -> List[Dict]:
         """Apply diversity filtering for same-category products."""
+        # TEMPORARILY DISABLED: Return all products without filtering
+        logger.info(f"🔄 TEMPORARILY DISABLED: Returning all {len(similar_products)} products without diversity filtering")
+        return similar_products
+        
+        # Original diversity filtering code (commented out)
+        """
         if not self.config.get('diversity_threshold'):
             return similar_products
         
@@ -838,6 +917,7 @@ class SupabaseEnhancedSimilarProductsGenerator:
                 diverse_products.append(product)
         
         return diverse_products
+        """
     
     def _calculate_text_similarity(self, text1: str, text2: str) -> float:
         """Simple text similarity calculation."""
@@ -855,23 +935,12 @@ class SupabaseEnhancedSimilarProductsGenerator:
     def _passes_filters(self, product: pd.Series, filters: Dict) -> bool:
         """Check if product passes user-defined filters."""
         
-        # Price range filter
-        if 'price_range' in filters:
-            min_price, max_price = filters['price_range']
-            product_price = product.get('price', 1000)
-            if not (min_price <= product_price <= max_price):
-                return False
+        # ✅ MODIFIED: Only apply styles filter, removed price_range and colors filters
         
         # Style filter
         if 'styles' in filters:
             product_style = product.get('enhanced_primary_style', product.get('primary_style', ''))
             if not any(style.lower() in product_style.lower() for style in filters['styles']):
-                return False
-        
-        # Color filter
-        if 'colors' in filters:
-            product_color = product.get('primary_color', '')
-            if product_color not in filters['colors']:
                 return False
         
         return True
@@ -939,7 +1008,7 @@ class SupabaseEnhancedSimilarProductsGenerator:
         if product_id:
             try:
                 # Query the tagged_products table for precomputed embedding
-                result = self.db.client.table('tagged_products').select('product_embedding').eq('id', product_id).execute()
+                result = self.db.client.table('tagged_products').select('product_embedding').eq('product_id', product_id).execute()
                 
                 if result.data and result.data[0].get('product_embedding'):
                     embedding_json = result.data[0]['product_embedding']
@@ -1044,17 +1113,15 @@ def main():
     user_preferences = {
         'preferred_styles': ['Business Formal', 'Formal'],
         'preferred_colors': ['Black', 'Navy', 'White'],
-        'price_range': (800, 2500)
     }
     
     # Sample filters
     filters = {
-        'price_range': (500, 3000),
-        'styles': ['Business', 'Formal'],
+        # ✅ REMOVED: No longer using styles filter, only essential filters
     }
     
-    # Test with enhanced same-category features - using product ID 2217 as requested
-    test_product_id = "2217"
+    # Test with enhanced same-category features - using product ID 2859 as requested
+    test_product_id = "2859"
     
     logger.info(f"🔍 Testing Enhanced Same-Category Phase 3 with Supabase for product: {test_product_id}")
     

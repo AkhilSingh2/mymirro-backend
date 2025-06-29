@@ -589,17 +589,17 @@ class SupabaseMainOutfitsGenerator:
                 # Extract gender from user data for filtering
                 gender = user_data.get('Gender', '').lower()
                 if gender in ['male', 'female']:
-                    # Use the simpler method with gender filter
-                    products_df = self.db.get_products_simple(gender=gender, limit=3000)
-                    logger.info(f"✅ Loaded {len(products_df)} products for {gender} users using simple method")
+                    # Use chunking to load all products with gender filter
+                    products_df = self.db._get_all_products_chunked(gender=gender)
+                    logger.info(f"✅ Loaded {len(products_df)} products for {gender} users using chunking method")
                 else:
-                    # Fallback to basic products without gender filter
-                    products_df = self.db.get_products_simple(limit=3000)
-                    logger.info(f"✅ Loaded {len(products_df)} products using simple method (no gender filter)")
+                    # Fallback to basic products without gender filter using chunking
+                    products_df = self.db._get_all_products_chunked()
+                    logger.info(f"✅ Loaded {len(products_df)} products using chunking method (no gender filter)")
             else:
-                # Fallback to basic products loading
-                products_df = self.db.get_products_simple(limit=3000)
-                logger.info(f"✅ Loaded {len(products_df)} products using simple method (no user data)")
+                # Fallback to basic products loading using chunking
+                products_df = self.db._get_all_products_chunked()
+                logger.info(f"✅ Loaded {len(products_df)} products using chunking method (no user data)")
             
             if products_df.empty:
                 logger.error("❌ No products data found in Supabase")
@@ -627,16 +627,16 @@ class SupabaseMainOutfitsGenerator:
         metrics = {
             'total_products': len(products_df),
             'missing_title': products_df['title'].isna().sum(),
-            'missing_category': products_df['category'].isna().sum() if 'category' in products_df.columns else 0
+            'missing_category': products_df['scraped_category'].isna().sum() if 'scraped_category' in products_df.columns else 0
         }
 
         # Drop rows with missing critical fields
         products_df = products_df.dropna(subset=['title'])
 
-        # ✅ ENHANCED: Infer wear_type from category and other information
+        # ✅ ENHANCED: Infer wear_type from scraped_category and other information
         def infer_wear_type(row):
-            """Infer wear type from category and title"""
-            category = str(row.get('category', '')).lower()
+            """Infer wear type from scraped_category and title"""
+            category = str(row.get('scraped_category', '')).lower()
             title = str(row.get('title', '')).lower()
 
             # Check for bottom wear keywords
@@ -734,10 +734,12 @@ class SupabaseMainOutfitsGenerator:
 
         # Ensure unique product IDs
         if 'product_id' not in products_df.columns:
-            if 'id' in products_df.columns:
-                products_df['product_id'] = products_df['id'].astype(str)
-            else:
-                products_df['product_id'] = [f"PROD_{i:06d}" for i in range(len(products_df))]
+            # Use the actual product_id column from the database, not create from id
+            logger.warning("No product_id column found in products data - this should not happen")
+            products_df['product_id'] = [f"PROD_{i:06d}" for i in range(len(products_df))]
+        else:
+            # Ensure product_id is string type
+            products_df['product_id'] = products_df['product_id'].astype(str)
 
         # Calculate overall data quality score
         def calculate_quality_score(row):
@@ -745,7 +747,7 @@ class SupabaseMainOutfitsGenerator:
             total_fields = 0
 
             # Required fields
-            required_fields = ['title', 'category', 'wear_type']
+            required_fields = ['title', 'scraped_category', 'wear_type']
             for field in required_fields:
                 if pd.notna(row.get(field)):
                     score += 1.0
@@ -784,7 +786,7 @@ class SupabaseMainOutfitsGenerator:
         # Create final_caption for FAISS if missing
         if 'final_caption' not in products_df.columns:
             products_df['final_caption'] = products_df.apply(lambda row: 
-                f"{row.get('title', '')} {row.get('category', '')} {row.get('primary_style', '')} {row.get('primary_color', '')}".strip(), axis=1)
+                f"{row.get('title', '')} {row.get('scraped_category', '')} {row.get('primary_style', '')} {row.get('primary_color', '')}".strip(), axis=1)
 
         return products_df
 
@@ -1582,7 +1584,7 @@ class SupabaseMainOutfitsGenerator:
             # Get broader keywords for the target style
             style_keywords = broad_style_mappings.get(target_style.lower(), [target_style.lower()])
             
-            # Broader filtering using multiple fields
+            # Broader filtering using multiple fields that actually exist
             filtered_products = products_df[
                 # Check primary_style field
                 products_df['primary_style'].str.contains('|'.join(style_keywords), case=False, na=False) |
@@ -1590,8 +1592,10 @@ class SupabaseMainOutfitsGenerator:
                 products_df['full_caption'].str.contains('|'.join(style_keywords), case=False, na=False) |
                 # Check title field for style keywords
                 products_df['title'].str.contains('|'.join(style_keywords), case=False, na=False) |
-                # Check category field
-                products_df['category'].str.contains('|'.join(style_keywords), case=False, na=False)
+                # Check style_category field (exists)
+                products_df['style_category'].str.contains('|'.join(style_keywords), case=False, na=False) |
+                # Check product_type field (exists)
+                products_df['product_type'].str.contains('|'.join(style_keywords), case=False, na=False)
             ].copy()
             
             logger.info(f"🎨 Fallback filtering found {len(filtered_products)} products for style '{target_style}'")
@@ -1610,7 +1614,7 @@ class SupabaseMainOutfitsGenerator:
             
             # Use any available products that haven't been used
             available_products = products_df[
-                ~products_df['id'].isin(used_top_ids | used_bottom_ids)
+                ~products_df['product_id'].isin(used_top_ids | used_bottom_ids)
             ].copy()
             
             if available_products.empty:
@@ -1636,12 +1640,12 @@ class SupabaseMainOutfitsGenerator:
                 bottom = bottoms.sample(n=1).iloc[0]
                 
                 # Remove selected products from available pool
-                tops = tops[tops['id'] != top['id']]
-                bottoms = bottoms[bottoms['id'] != bottom['id']]
+                tops = tops[tops['product_id'] != top['product_id']]
+                bottoms = bottoms[bottoms['product_id'] != bottom['product_id']]
                 
                 # Add to used sets
-                used_top_ids.add(top['id'])
-                used_bottom_ids.add(bottom['id'])
+                used_top_ids.add(top['product_id'])
+                used_bottom_ids.add(bottom['product_id'])
                 
                 # Generate outfit data with fallback style
                 outfit = self._create_outfit_data(
@@ -1675,7 +1679,7 @@ class SupabaseMainOutfitsGenerator:
                 'winter coat', 'overcoat', 'pea coat', 'duffle coat', 'parka', 'anorak'
             ]
             
-            # Filter out winter items
+            # Filter out winter items using columns that exist
             winter_mask = products_df['title'].str.lower().str.contains('|'.join(winter_keywords), na=False)
             winter_mask |= products_df['scraped_category'].str.lower().str.contains('|'.join(winter_keywords), na=False)
             winter_mask |= products_df['primary_style'].str.lower().str.contains('|'.join(winter_keywords), na=False)
@@ -1687,28 +1691,32 @@ class SupabaseMainOutfitsGenerator:
             logger.info(f"🌞 Style filter: Removed {winter_mask.sum()} winter items for {target_style}")
             
             # ✅ PRACTICAL APPROACH: Use the actual style fields from the database
-            # Check the three main style fields in order of importance
+            # Check the style fields that actually exist in order of importance
             style_matches = []
             
-            # 1. Check primary_style_category (most important)
-            primary_matches = products_df[
-                products_df['primary_style_category'].str.contains(target_style_lower, case=False, na=False)
-            ]
-            style_matches.append(primary_matches)
-            
-            # 2. Check style_category 
+            # 1. Check style_category (most important - exists)
             style_matches.append(products_df[
                 products_df['style_category'].str.contains(target_style_lower, case=False, na=False)
             ])
             
-            # 3. Check primary_style
+            # 2. Check primary_style (exists)
             style_matches.append(products_df[
                 products_df['primary_style'].str.contains(target_style_lower, case=False, na=False)
             ])
             
+            # 3. Check title for style keywords
+            style_matches.append(products_df[
+                products_df['title'].str.contains(target_style_lower, case=False, na=False)
+            ])
+            
+            # 4. Check product_type for style keywords
+            style_matches.append(products_df[
+                products_df['product_type'].str.contains(target_style_lower, case=False, na=False)
+            ])
+            
             # Combine all matches and remove duplicates
             if style_matches:
-                filtered_products = pd.concat(style_matches, ignore_index=True).drop_duplicates(subset=['id'])
+                filtered_products = pd.concat(style_matches, ignore_index=True).drop_duplicates(subset=['product_id'])
             else:
                 filtered_products = pd.DataFrame()
             
@@ -1718,7 +1726,7 @@ class SupabaseMainOutfitsGenerator:
             if not filtered_products.empty:
                 sample_products = filtered_products.head(3)
                 for _, product in sample_products.iterrows():
-                    logger.info(f"  ✅ Sample: {product.get('title', 'N/A')} | Primary Style: {product.get('primary_style_category', 'N/A')} | Style: {product.get('style_category', 'N/A')} | ID: {product.get('id', 'N/A')}")
+                    logger.info(f"  ✅ Sample: {product.get('title', 'N/A')} | Primary Style: {product.get('primary_style', 'N/A')} | Style: {product.get('style_category', 'N/A')} | ID: {product.get('product_id', 'N/A')}")
             
             return filtered_products
             
@@ -1746,8 +1754,8 @@ class SupabaseMainOutfitsGenerator:
                 return []
             
             # Remove already used products
-            tops = tops[~tops['id'].isin(used_top_ids)]
-            bottoms = bottoms[~bottoms['id'].isin(used_bottom_ids)]
+            tops = tops[~tops['product_id'].isin(used_top_ids)]
+            bottoms = bottoms[~bottoms['product_id'].isin(used_bottom_ids)]
             
             if tops.empty or bottoms.empty:
                 logger.warning(f"⚠️ No unused products available for style: {style}")
@@ -1764,12 +1772,12 @@ class SupabaseMainOutfitsGenerator:
                 bottom = bottoms.sample(n=1).iloc[0]
                 
                 # Remove selected products from available pool
-                tops = tops[tops['id'] != top['id']]
-                bottoms = bottoms[bottoms['id'] != bottom['id']]
+                tops = tops[tops['product_id'] != top['product_id']]
+                bottoms = bottoms[bottoms['product_id'] != bottom['product_id']]
                 
                 # Add to used sets
-                used_top_ids.add(top['id'])
-                used_bottom_ids.add(bottom['id'])
+                used_top_ids.add(top['product_id'])
+                used_bottom_ids.add(bottom['product_id'])
                 
                 # Generate outfit data
                 outfit = self._create_outfit_data(
@@ -1795,8 +1803,8 @@ class SupabaseMainOutfitsGenerator:
             
             # ✅ FIX 2: Safe data access for pandas Series
             try:
-                top_id = top.get('id', '')
-                bottom_id = bottom.get('id', '')
+                top_id = top.get('product_id', '')
+                bottom_id = bottom.get('product_id', '')
             except Exception as e:
                 logger.warning(f"[SKIP] Cannot access product ID: {e}")
                 return {}
@@ -2240,15 +2248,13 @@ class SupabaseMainOutfitsGenerator:
 
             logger.info(f"💾 Saving {len(outfits_data)} outfits to Supabase for user {user_id}")
 
-            # ✅ FIX: Use timestamp-based IDs to avoid conflicts with existing outfits
-            import time
-            timestamp = int(time.time())
+            # ✅ FIX: Use simple sequential IDs to avoid conflicts with existing outfits
             
-            # 🎯 FIRST: Prepare outfits with unique timestamp-based IDs
+            # 🎯 FIRST: Prepare outfits with simple sequential IDs
             processed_outfits = []
             for i, outfit in enumerate(outfits_data):
-                # Use timestamp-based ID to avoid conflicts
-                unique_id = f"main_{user_id}_{timestamp}_{i+1}"
+                # Use simple sequential ID format: main_userid_rank
+                unique_id = f"main_{user_id}_{i+1}"
                 
                 outfit_copy = outfit.copy()
                 outfit_copy['main_outfit_id'] = unique_id
@@ -2301,7 +2307,6 @@ class SupabaseMainOutfitsGenerator:
     def _clear_user_outfits_completely(self, user_id: int) -> bool:
         """Completely clear all outfits for a user with multiple strategies."""
         try:
-            import time
             
             strategies_attempted = 0
             total_deleted = 0

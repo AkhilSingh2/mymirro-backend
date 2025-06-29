@@ -102,29 +102,19 @@ class SupabaseDB:
         """Get all products from the database."""
         try:
             logger.info("🔍 Starting get_products...")
-            
-            # ✅ FIX: Only select columns that actually exist in the database
+            # ✅ FIX: Include product_id column for proper product identification
             needed_columns = [
-                'id', 'title', 'product_type', 'gender',
+                'id', 'product_id', 'title', 'product_type', 'gender',
                 'primary_style', 'primary_color', 'image_url',
                 'full_caption', 'product_embedding', 'scraped_category', 'style_category'
             ]
-            
             query = self.client.table('tagged_products').select(','.join(needed_columns))
-            
             if limit:
                 query = query.limit(limit)
-            
-            result = query.execute()
-            
-            if result.data:
-                products_df = pd.DataFrame(result.data)
-                logger.info(f"✅ get_products: {len(products_df)} products")
-                return self._process_products_dataframe(products_df)
-            else:
-                logger.warning("No products found")
-                return pd.DataFrame()
-                
+            data = query.execute()
+            df = pd.DataFrame(data.data)
+            logger.info(f"✅ get_products: {len(df)} products")
+            return df
         except Exception as e:
             logger.error(f"❌ get_products failed: {e}")
             return pd.DataFrame()
@@ -150,96 +140,153 @@ class SupabaseDB:
         
         all_products = []
         total_fetched = 0
+        offset = 0
         
-        # For now, just get all products in one go since the new get_products method is optimized
         try:
-            products_df = self.get_products(limit=None)  # Get all products
+            # Load products in chunks using pagination
+            while True:
+                logger.info(f"📥 Loading chunk {len(all_products) + 1} (offset: {offset}, limit: {chunk_size})")
+                
+                # Build query for this chunk
+                needed_columns = [
+                    'id', 'product_id', 'title', 'product_type', 'gender',
+                    'primary_style', 'primary_color', 'image_url',
+                    'full_caption', 'product_embedding', 'scraped_category', 'style_category'
+                ]
+                query = self.client.table('tagged_products').select(','.join(needed_columns))
+                
+                # Apply pagination
+                query = query.range(offset, offset + chunk_size - 1)
+                
+                # Execute query for this chunk
+                result = query.execute()
+                
+                if not result.data:
+                    logger.info(f"✅ No more products found at offset {offset}")
+                    break
+                
+                chunk_df = pd.DataFrame(result.data)
+                all_products.append(chunk_df)
+                total_fetched += len(chunk_df)
+                
+                logger.info(f"✅ Loaded chunk {len(all_products)}: {len(chunk_df)} products (total: {total_fetched})")
+                
+                # If we got fewer products than chunk_size, we've reached the end
+                if len(chunk_df) < chunk_size:
+                    logger.info(f"✅ Reached end of products (got {len(chunk_df)} < {chunk_size})")
+                    break
+                
+                # Move to next chunk
+                offset += chunk_size
+                
+                # Safety check to prevent infinite loops
+                if len(all_products) > 50:  # Max 50 chunks = 50,000 products
+                    logger.warning(f"⚠️ Reached maximum chunks limit (50), stopping at {total_fetched} products")
+                    break
             
-            if not products_df.empty:
+            # Combine all chunks
+            if all_products:
+                products_df = pd.concat(all_products, ignore_index=True)
+                logger.info(f"✅ Successfully loaded {len(products_df)} total products in {len(all_products)} chunks")
+                
                 # Apply filters if needed
                 if wear_type:
                     products_df = products_df[products_df['wear_type'] == wear_type]
+                    logger.info(f"✅ Applied wear_type filter '{wear_type}': {len(products_df)} products remaining")
                 if gender:
                     products_df = products_df[products_df['gender'].str.lower() == gender.lower()]
+                    logger.info(f"✅ Applied gender filter '{gender}': {len(products_df)} products remaining")
                 if style:
                     products_df = products_df[products_df['primary_style'].str.contains(style, case=False, na=False)]
+                    logger.info(f"✅ Applied style filter '{style}': {len(products_df)} products remaining")
                 
-                logger.info(f"✅ Successfully loaded {len(products_df)} total products")
+                # Process the DataFrame to add required columns
+                products_df = self._process_products_dataframe(products_df)
+                
+                logger.info(f"✅ Final result: {len(products_df)} products ready for use")
                 return products_df
             else:
-                logger.warning("⚠️ No products loaded")
+                logger.warning("⚠️ No products loaded from any chunk")
                 return pd.DataFrame()
                 
         except Exception as e:
             logger.error(f"❌ Error in chunked loading: {e}")
             return pd.DataFrame()
     
+    def _categorize_wear_type(self, row) -> str:
+        """Categorize products into wear types based on product_type (preferred) or scraped_category."""
+        # Exhaustive lists for upperwear and bottomwear
+        upperwear_types = [
+            't-shirt', 'tshirts', 'tee', 'tees', 'shirt', 'shirts', 'blouse', 'blouses', 'top', 'tops', 'sweater', 'sweaters', 'hoodie', 'hoodies', 'jacket', 'jackets',
+            'blazer', 'blazers', 'cardigan', 'cardigans', 'tank top', 'tank tops', 'crop top', 'crop tops', 'sleeveless', 'tunic', 'tunics', 'polo shirt', 'polo shirts',
+            'henley', 'henleys', 'dress', 'dresses', 'maxi dress', 'maxi dresses', 'mini dress', 'mini dresses', 'gown', 'gowns', 'sweatshirt', 'sweatshirts', 'pullover',
+            'pullovers', 'jumper', 'jumpers', 'vest', 'vests', 'camisole', 'camisoles', 'bodysuit', 'bodysuits', 'turtleneck', 'turtlenecks', 'mock neck', 'mock necks',
+            'crew neck', 'crew necks', 'v-neck', 'v-necks', 'round neck', 'round necks', 'kurta', 'kurtas', 'ethnic', 'formal-top', 'casual-top', 'shrug', 'shrugs',
+            'cape', 'capes', 'kaftan', 'kaftans', 'poncho', 'ponchos', 'sweatervest', 'sweater vest', 'sweater vests', 'overcoat', 'overcoats', 'anorak', 'anoraks',
+            'parka', 'parkas', 'windcheater', 'windcheaters', 'bolero', 'boleros', 'peplum', 'peplums', 'wrap', 'wraps', 'kimono', 'kimonos', 'tuxedo', 'tuxedos',
+            'waistcoat', 'waistcoats', 'over-shirt', 'over-shirts', 'over shirt', 'over shirts', 'shrug', 'shrugs', 'sweatervest', 'sweater vest', 'sweater vests'
+        ]
+        bottomwear_types = [
+            'trousers', 'trouser', 'jeans', 'jean', 'pants', 'pant', 'shorts', 'short', 'skirt', 'skirts', 'pencil skirt', 'pencil skirts', 'a-line skirt', 'a-line skirts',
+            'midi skirt', 'midi skirts', 'mini skirt', 'mini skirts', 'maxi skirt', 'maxi skirts', 'joggers', 'jogger', 'chinos', 'chino', 'dress pants', 'slacks', 'cargos',
+            'cargo', 'denim pants', 'denim pant', 'denim shorts', 'denim short', 'leggings', 'legging', 'tights', 'tight', 'culottes', 'culotte', 'palazzos', 'palazzo',
+            'wide leg pants', 'wide leg pant', 'skinny pants', 'skinny pant', 'straight leg pants', 'straight leg pant', 'bootcut pants', 'bootcut pant', 'flare pants',
+            'flare pant', 'cropped pants', 'cropped pant', 'ankle pants', 'ankle pant', 'high-waisted pants', 'high-waisted pant', 'low-rise pants', 'low-rise pant',
+            'dhoti', 'dhotis', 'salwar', 'salwars', 'patiala', 'patialas', 'lungi', 'lungis', 'harem pants', 'harem pant', 'track pants', 'track pant', 'capri', 'capris',
+            'bermuda', 'bermudas', 'pyjama', 'pyjamas', 'pajama', 'pajamas', 'formal-bottom', 'casual-bottom', 'skort', 'skorts', 'treggings', 'tregging', 'overalls', 'overall'
+        ]
+        # Prefer product_type if available
+        product_type = row.get('product_type', '')
+        scraped_category = row.get('scraped_category', '')
+        # Normalize
+        pt = product_type.strip().lower() if product_type else ''
+        sc = scraped_category.strip().lower() if scraped_category else ''
+        # Check product_type first
+        for keyword in upperwear_types:
+            if keyword in pt:
+                return 'Upperwear'
+        for keyword in bottomwear_types:
+            if keyword in pt:
+                return 'Bottomwear'
+        # Fallback to scraped_category
+        for keyword in upperwear_types:
+            if keyword in sc:
+                return 'Upperwear'
+        for keyword in bottomwear_types:
+            if keyword in sc:
+                return 'Bottomwear'
+        # Fallback: try to guess
+        if any(word in pt for word in ['shirt', 'top', 'blouse', 'sweater', 'jacket', 'dress', 't-shirt', 'polo', 'henley', 'vest', 'tank', 'crop']):
+            return 'Upperwear'
+        if any(word in pt for word in ['pants', 'trousers', 'jeans', 'shorts', 'skirt', 'chinos', 'joggers', 'leggings', 'tights', 'culottes', 'palazzos']):
+            return 'Bottomwear'
+        if any(word in sc for word in ['shirt', 'top', 'blouse', 'sweater', 'jacket', 'dress', 't-shirt', 'polo', 'henley', 'vest', 'tank', 'crop']):
+            return 'Upperwear'
+        if any(word in sc for word in ['pants', 'trousers', 'jeans', 'shorts', 'skirt', 'chinos', 'joggers', 'leggings', 'tights', 'culottes', 'palazzos']):
+            return 'Bottomwear'
+        # Log unknown types for debugging
+        logger.warning(f"Unknown wear type for product_type='{product_type}', scraped_category='{scraped_category}' - defaulting to Upperwear")
+        return 'Upperwear'
+
     def _process_products_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Process and enhance the products DataFrame with required columns and mappings.
-        
-        Args:
-            df: Raw products DataFrame from Supabase
-            
-        Returns:
-            pandas.DataFrame: Processed products DataFrame
-        """
         if df.empty:
             return df
-        
-        # Map tagged_products columns to expected outfit generator columns
-        # Use product_id as the main ID (references products table)
+        # Always use product_id as the main identifier
         if 'product_id' in df.columns:
             df['id'] = df['product_id']
-        
         # Add category field mapping from scraped_category
         if 'scraped_category' in df.columns and 'category' not in df.columns:
             df['category'] = df['scraped_category']
-        
         # Add missing columns that the outfit generator expects
         if 'wear_type' not in df.columns:
-            # Use scraped_category instead of category
-            df['wear_type'] = df['scraped_category'].apply(self._categorize_wear_type)
-        
+            # Use new robust categorization
+            df['wear_type'] = df.apply(self._categorize_wear_type, axis=1)
         # Gender is already available in the tagged_products table, no need to infer
         if 'gender' not in df.columns:
-            # Infer gender from scraped_category if needed
             df['gender'] = df['scraped_category'].apply(self._infer_gender_from_category)
-        
-        # Use enhanced tags from tagged_products - these are already available!
         if 'final_caption' not in df.columns:
-            # Use the rich full_caption or create from enhanced fields
-            df['final_caption'] = df.apply(lambda row: 
-                row.get('full_caption', '') or 
-                f"{row.get('title', '')} - {row.get('primary_style', '')} {row.get('primary_color', '')} {row.get('primary_fabric', '')}".strip(), axis=1)
-        
+            df['final_caption'] = df.apply(lambda row: row.get('full_caption', '') or f"{row.get('title', '')} - {row.get('primary_style', '')} {row.get('primary_color', '')} {row.get('primary_fabric', '')}".strip(), axis=1)
         return df
-    
-    def _categorize_wear_type(self, scraped_category: str) -> str:
-        """Categorize products into wear types based on scraped_category."""
-        if not scraped_category:
-            return 'Upperwear'
-        
-        category_lower = scraped_category.lower()
-        
-        # Classify based on your actual product categories from scraped_category
-        if any(word in category_lower for word in [
-            'kurta', 'shirt', 'top', 'blouse', 'jacket', 'sweater', 'tee', 'tank',
-            'ethnic', 'print', 'cotton', 'motifs', 'formal-top', 'casual-top'
-        ]):
-            return 'Upperwear'
-        elif any(word in category_lower for word in [
-            'pant', 'jean', 'trouser', 'short', 'skirt', 'bottom', 'pajama', 'salwar',
-            'formal-bottom', 'casual-bottom'
-        ]):
-            return 'Bottomwear'
-        elif any(word in category_lower for word in [
-            'dress', 'gown', 'frock', 'sheath'
-        ]):
-            return 'Dresses'
-        else:
-            # For your data, most items seem to be ethnic wear (kurtas)
-            return 'Upperwear'  # Default
     
     def _infer_gender_from_category(self, scraped_category: str) -> str:
         """Infer gender from product scraped_category."""
@@ -1029,7 +1076,15 @@ class SupabaseDB:
                 records.append(record)
             
             # Insert records using upsert to handle duplicates
-            result = self.client.table('similar_products').upsert(records).execute()
+            # First, delete existing records for this main_product_id to avoid constraint violations
+            try:
+                delete_result = self.client.table('similar_products').delete().eq('main_product_id', main_product_id).execute()
+                logger.info(f"🗑️ Deleted {len(delete_result.data) if delete_result.data else 0} existing records for product {main_product_id}")
+            except Exception as delete_e:
+                logger.warning(f"⚠️ Could not delete existing records: {delete_e}")
+            
+            # Now insert the new records
+            result = self.client.table('similar_products').insert(records).execute()
             
             logger.info(f"✅ Stored {len(records)} similar products for product {main_product_id}")
             return True
@@ -1168,42 +1223,175 @@ class SupabaseDB:
             logger.error(f"❌ get_products_by_type_with_filters failed for {wear_category}: {e}")
             return pd.DataFrame()
 
-    def get_products_simple(self, gender: str = None, limit: int = 500) -> pd.DataFrame:
-        """Get products with minimal filtering to avoid timeouts."""
+    def get_products_simple(self, gender: str = None, limit: int = 50000) -> pd.DataFrame:
+        """Get ALL products with minimal filtering (large limit to avoid timeouts)."""
         try:
             logger.info(f"🔍 Starting get_products_simple (gender: {gender}, limit: {limit})...")
-            
-            # ✅ ULTRA-OPTIMIZATION: Only select essential columns
+            # Rollback: Only load columns that worked previously
             needed_columns = [
-                'id', 'title', 'product_type', 'gender',
+                'product_id', 'title', 'product_type', 'gender',
                 'primary_style', 'primary_color', 'image_url',
-                'full_caption', 'product_embedding', 'scraped_category'
+                'full_caption', 'product_embedding', 'scraped_category', 'style_category'
             ]
-            
-            # Build base query with specific columns
             query = self.client.table('tagged_products').select(','.join(needed_columns))
-            
-            # Apply gender filter if specified
             if gender:
-                query = query.eq('gender', gender.capitalize())
-                logger.info(f"Applied gender filter: {gender.capitalize()}")
+                # ✅ FIX: Capitalize gender to match database values (Male/Female)
+                gender_capitalized = gender.capitalize()
+                query = query.eq('gender', gender_capitalized)
+                logger.info(f"Applied gender filter: {gender_capitalized}")
+            if limit:
+                query = query.limit(limit)
+            data = query.execute()
+            df = pd.DataFrame(data.data)
+            logger.info(f"✅ get_products_simple: {len(df)} products")
+            return df
+        except Exception as e:
+            logger.error(f"❌ get_products_simple failed: {e}")
+            return pd.DataFrame()
+
+    # ✅ NEW: Phase-specific data loading functions to prevent cross-phase interference
+    
+    def get_products_phase1(self, gender: str = None, limit: int = 500) -> pd.DataFrame:
+        """Get products specifically for Phase 1 (outfit generation) using product_id column."""
+        try:
+            logger.info(f"🔍 Starting get_products_phase1 (gender: {gender}, limit: {limit})...")
+            # Phase 1 specific columns - uses product_id and style_category
+            needed_columns = [
+                'product_id', 'title', 'product_type', 'gender',
+                'primary_style', 'primary_color', 'image_url',
+                'full_caption', 'product_embedding', 'scraped_category', 'style_category'
+            ]
+            query = self.client.table('tagged_products').select(','.join(needed_columns))
+            if gender:
+                gender_capitalized = gender.capitalize()
+                query = query.eq('gender', gender_capitalized)
+                logger.info(f"Applied gender filter: {gender_capitalized}")
+            if limit:
+                query = query.limit(limit)
+            data = query.execute()
+            df = pd.DataFrame(data.data)
+            logger.info(f"✅ get_products_phase1: {len(df)} products")
+            return df
+        except Exception as e:
+            logger.error(f"❌ get_products_phase1 failed: {e}")
+            return pd.DataFrame()
+
+    def get_products_phase2(self, gender: str = None, limit: int = 500):
+        """
+        Efficiently load only the columns needed for Phase 2 (Similar Outfits), with a reasonable limit but only essential fields to avoid timeouts.
+        """
+        import pandas as pd
+        from supabase import create_client, Client
+        import logging
+        logger = logging.getLogger("database")
+        columns = [
+            'product_id', 'title', 'product_type', 'gender', 'primary_style',
+            'primary_color', 'image_url', 'product_embedding', 'comprehensive_style_categories'
+        ]
+        select_str = ','.join(columns)
+        filters = {}
+        # Temporarily disable gender filter to test if that's causing the timeout
+        # if gender:
+        #     filters['gender'] = gender.capitalize()
+        
+        logger.info(f"🔍 Starting get_products_phase2 (gender: {gender}, limit: {limit})...")
+        
+        try:
+            # Build the query
+            query = self.client.table('tagged_products').select(select_str)
+            
+            # Apply filters
+            for key, value in filters.items():
+                query = query.eq(key, value)
             
             # Apply limit
             query = query.limit(limit)
             
             # Execute query
-            result = query.execute()
+            response = query.execute()
             
-            if result.data:
-                products_df = pd.DataFrame(result.data)
-                logger.info(f"✅ get_products_simple: {len(products_df)} products")
-                return self._process_products_dataframe(products_df)
+            if response.data:
+                df = pd.DataFrame(response.data)
+                
+                # ✅ ADD: Create wear_type column from product_type
+                def map_to_wear_type(product_type):
+                    if not product_type:
+                        return 'Upperwear'  # Default fallback
+                    
+                    # Normalize product type for better matching
+                    product_type_normalized = product_type.strip().lower()
+                    
+                    # Define upperwear product types (comprehensive list)
+                    upperwear_types = [
+                        't-shirt', 'shirt', 'blouse', 'top', 'sweater', 'hoodie', 'jacket', 
+                        'blazer', 'cardigan', 'tank top', 'crop top', 'sleeveless', 'tunic',
+                        'polo shirt', 'henley', 'dress', 'maxi dress', 'mini dress', 'gown',
+                        'sweatshirt', 'pullover', 'jumper', 'vest', 'camisole', 'bodysuit',
+                        'turtleneck', 'mock neck', 'crew neck', 'v-neck', 'round neck'
+                    ]
+                    
+                    # Define bottomwear product types (comprehensive list)
+                    bottomwear_types = [
+                        'trousers', 'jeans', 'pants', 'shorts', 'skirt', 'pencil skirt',
+                        'a-line skirt', 'midi skirt', 'mini skirt', 'maxi skirt', 'joggers',
+                        'chinos', 'dress pants', 'slacks', 'cargos', 'denim pants', 'denim shorts',
+                        'leggings', 'tights', 'culottes', 'palazzos', 'wide leg pants',
+                        'skinny pants', 'straight leg pants', 'bootcut pants', 'flare pants',
+                        'cropped pants', 'ankle pants', 'high-waisted pants', 'low-rise pants'
+                    ]
+                    
+                    # Check if normalized product type is in categories
+                    if product_type_normalized in upperwear_types:
+                        return 'Upperwear'
+                    elif product_type_normalized in bottomwear_types:
+                        return 'Bottomwear'
+                    else:
+                        # If unknown, try to guess based on common patterns
+                        if any(word in product_type_normalized for word in ['shirt', 'top', 'blouse', 'sweater', 'jacket', 'dress', 't-shirt', 'polo', 'henley', 'vest', 'tank', 'crop']):
+                            return 'Upperwear'
+                        elif any(word in product_type_normalized for word in ['pants', 'trousers', 'jeans', 'shorts', 'skirt', 'chinos', 'joggers', 'leggings', 'tights', 'culottes', 'palazzos']):
+                            return 'Bottomwear'
+                        else:
+                            # Log unknown product types for debugging
+                            logger.warning(f"Unknown product type for wear_type mapping: '{product_type}' - defaulting to Upperwear")
+                            return 'Upperwear'  # Default fallback
+                
+                # Apply the mapping to create wear_type column
+                df['wear_type'] = df['product_type'].apply(map_to_wear_type)
+                
+                logger.info(f"✅ get_products_phase2: {len(df)} products")
+                return df
             else:
-                logger.warning("No products found with simple filtering")
+                logger.warning(f"⚠️ get_products_phase2: No products found")
                 return pd.DataFrame()
                 
         except Exception as e:
-            logger.error(f"❌ get_products_simple failed: {e}")
+            logger.error(f"❌ get_products_phase2 failed: {e}")
+            return pd.DataFrame()
+
+    def get_products_phase3(self, gender: str = None, limit: int = 1000) -> pd.DataFrame:
+        """Get products specifically for Phase 3 (similar products) using id column."""
+        try:
+            logger.info(f"🔍 Starting get_products_phase3 (gender: {gender}, limit: {limit})...")
+            # Phase 3 specific columns - uses id and style_category
+            needed_columns = [
+                'id', 'title', 'product_type', 'gender',
+                'primary_style', 'primary_color', 'image_url',
+                'full_caption', 'product_embedding', 'scraped_category', 'style_category'
+            ]
+            query = self.client.table('tagged_products').select(','.join(needed_columns))
+            if gender:
+                gender_capitalized = gender.capitalize()
+                query = query.eq('gender', gender_capitalized)
+                logger.info(f"Applied gender filter: {gender_capitalized}")
+            if limit:
+                query = query.limit(limit)
+            data = query.execute()
+            df = pd.DataFrame(data.data)
+            logger.info(f"✅ get_products_phase3: {len(df)} products")
+            return df
+        except Exception as e:
+            logger.error(f"❌ get_products_phase3 failed: {e}")
             return pd.DataFrame()
 
 # Global database instance
