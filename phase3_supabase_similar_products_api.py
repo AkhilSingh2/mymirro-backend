@@ -87,10 +87,10 @@ class SupabaseEnhancedSimilarProductsGenerator:
             'user_preference_weight': 2.5,   # User preference boost
             'wear_caption_weight': 2.2,      # Lower/upper wear caption matching
             'diversity_bonus': 0.3,          # Bonus for diverse but relevant products
-            'min_similarity_score': 0.15,    # Lowered for more candidates (was 0.25)
+            'min_similarity_score': 0.05,    # ✅ LOWERED: for production (was 0.15)
             'max_similar_products': 20,      # Maximum products to return
             'color_diversity_threshold': 0.7, # Threshold for color diversity bonus
-            'confidence_threshold': 0.2,      # Minimum similarity score for inclusion (lowered from 0.3)
+            'confidence_threshold': 0.1,      # ✅ LOWERED: Minimum similarity score for inclusion (was 0.2)
             'enable_diversity_filtering': False,  # Temporarily disable diversity filtering
         }
         
@@ -537,6 +537,16 @@ class SupabaseEnhancedSimilarProductsGenerator:
         else:
             logger.info("✅ Using cached FAISS indexes")
 
+        # ✅ ENHANCED: Ensure source product is in the dataset for better matching
+        source_product_id_str = str(product_id)
+        if 'product_id' in filtered_df.columns:
+            filtered_df['product_id_str'] = filtered_df['product_id'].astype(str)
+            source_in_dataset = source_product_id_str in filtered_df['product_id_str'].values
+            logger.info(f"🔍 Source product {source_product_id_str} in filtered dataset: {source_in_dataset}")
+            
+            if not source_in_dataset:
+                logger.warning("⚠️ Source product not in filtered dataset - this may affect similarity quality")
+
         # 7. Generate same-category candidates only (from filtered set)
         candidates = self._generate_same_category_candidates(source_product, filtered_df, user_preferences)
         if not candidates:
@@ -550,10 +560,13 @@ class SupabaseEnhancedSimilarProductsGenerator:
         )
         logger.info(f"Found {len(similar_products)} diverse same-category products after filtering and FAISS")
 
-        # 9. Store results in cache
+        # 9. Store results in cache only if we have results
         processing_time_ms = int((time.time() - start_time) * 1000)
-        logger.info(f"💾 Storing {len(similar_products)} results in database cache...")
-        db.store_similar_products(product_id, similar_products, user_preferences, filters, processing_time_ms)
+        if similar_products:  # ✅ ENHANCED: Only store if we have results
+            logger.info(f"💾 Storing {len(similar_products)} results in database cache...")
+            db.store_similar_products(product_id, similar_products, user_preferences, filters, processing_time_ms)
+        else:
+            logger.warning("⚠️ No similar products found - skipping database storage")
 
         return similar_products[:num_similar]
     
@@ -563,6 +576,7 @@ class SupabaseEnhancedSimilarProductsGenerator:
         source_product_type = source_product.get('product_type', '')
         source_text = source_product.get('final_caption', '') or source_product.get('title', '')
         all_candidates = []
+        
         # 1. Core similar products (same category, similar features)
         core_candidates = self.search_similar_products_faiss(
             source_text, source_product_type, k=100
@@ -571,24 +585,52 @@ class SupabaseEnhancedSimilarProductsGenerator:
             candidate['candidate_type'] = 'core_similar'
             candidate['boost_factor'] = 1.0
         all_candidates.extend(core_candidates)
+        
+        # ✅ ENHANCED: Fallback if no core candidates found
+        if not core_candidates:
+            logger.warning("⚠️ No core candidates found, trying fallback searches...")
+            
+            # Fallback 1: Simple product type search
+            fallback_candidates = self.search_similar_products_faiss(
+                source_product_type, source_product_type, k=50
+            )
+            for candidate in fallback_candidates[:20]:  # Limit fallback
+                candidate['candidate_type'] = 'fallback_type'
+                candidate['boost_factor'] = 0.8
+            all_candidates.extend(fallback_candidates[:20])
+            
+            # Fallback 2: Use just product title
+            if source_product.get('title'):
+                title_candidates = self.search_similar_products_faiss(
+                    source_product.get('title', ''), source_product_type, k=30
+                )
+                for candidate in title_candidates[:15]:
+                    candidate['candidate_type'] = 'fallback_title'
+                    candidate['boost_factor'] = 0.7
+                all_candidates.extend(title_candidates[:15])
+        
         # 2. Color-diverse candidates (same category, different colors)
         if self.config['enable_color_diversity']:
             color_diverse_candidates = self._get_color_diverse_candidates(
                 source_product, products_df, user_preferences
             )
             all_candidates.extend(color_diverse_candidates)
+        
         # 3. Design-diverse candidates (same category, different designs)
         if self.config['enable_design_diversity']:
             design_diverse_candidates = self._get_design_diverse_candidates(
                 source_product, products_df, user_preferences
             )
             all_candidates.extend(design_diverse_candidates)
+        
         # 4. User preference enhanced candidates (same category)
         if user_preferences:
             preference_candidates = self._get_user_preference_candidates(
                 source_product, products_df, user_preferences
             )
             all_candidates.extend(preference_candidates)
+        
+        logger.info(f"✅ Generated {len(all_candidates)} total candidates (core: {len(core_candidates)})")
         return all_candidates
     
     def _get_color_diverse_candidates(self, source_product: pd.Series, products_df: pd.DataFrame, 
@@ -1082,25 +1124,48 @@ class SupabaseEnhancedSimilarProductsGenerator:
         if product_type not in self.faiss_indexes:
             logger.warning(f"No FAISS index available for product_type: {product_type}")
             return []
+        
+        # ✅ ENHANCED: Add debugging for production issues
+        logger.info(f"🔍 FAISS search: query='{query_text[:50]}...', product_type='{product_type}', k={k}")
+        
         self._ensure_model_loaded()
         query_embedding = self.get_embedding_cached(query_text)
         query_embedding = query_embedding.reshape(1, -1)
         query_embedding = query_embedding / np.linalg.norm(query_embedding, axis=1, keepdims=True)
+        
         index = self.faiss_indexes[product_type]
         scores, indices = index.search(query_embedding.astype('float32'), k)
+        
+        # ✅ ENHANCED: Debug FAISS search results
+        logger.info(f"🔍 FAISS raw scores: min={scores[0].min():.4f}, max={scores[0].max():.4f}, mean={scores[0].mean():.4f}")
+        logger.info(f"🔍 FAISS indices: {indices[0][:5]} (showing first 5)")
+        
         product_mapping = self.product_mappings[product_type]
         candidates = []
+        valid_candidates = 0
+        
         for i, (score, faiss_idx) in enumerate(zip(scores[0], indices[0])):
             if faiss_idx >= len(product_mapping['indices']):
+                logger.warning(f"⚠️ FAISS index {faiss_idx} >= mapping length {len(product_mapping['indices'])}")
                 continue
+            
+            # ✅ ENHANCED: Lower threshold for production - accept more candidates
+            if score < 0.1:  # Very low threshold (was implicitly filtering higher scores)
+                logger.debug(f"⚠️ Score {score:.4f} below threshold 0.1")
+                continue
+                
             product_idx = product_mapping['indices'][faiss_idx]
             product = product_mapping['products'].iloc[faiss_idx]
+            
             candidates.append({
                 'product_idx': product_idx,
                 'product': product,
                 'semantic_score': float(score),
                 'faiss_rank': i + 1
             })
+            valid_candidates += 1
+        
+        logger.info(f"✅ FAISS search found {valid_candidates}/{k} valid candidates for {product_type}")
         return candidates
 
 def main():
