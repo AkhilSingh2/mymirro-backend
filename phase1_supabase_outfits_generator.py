@@ -635,43 +635,35 @@ class SupabaseMainOutfitsGenerator:
 
         # ✅ ENHANCED: Infer wear_type from scraped_category and other information
         def infer_wear_type(row):
-            """Infer wear type from scraped_category and title"""
-            category = str(row.get('scraped_category', '')).lower()
+            """Infer wear type based on product metadata."""
+            product_type = str(row.get('product_type', '')).lower()
+            category = str(row.get('category', '')).lower()
             title = str(row.get('title', '')).lower()
-
-            # Check for bottom wear keywords
-            bottom_keywords = [
-                'pant',
-                'jean',
-                'trouser',
-                'short',
-                'skirt',
-                'legging',
-                'jogger',
-                'track',
-                'bottom']
-            if any(
-                    keyword in category or keyword in title for keyword in bottom_keywords):
-                return 'Bottomwear'
-
-            # Check for top wear keywords
+            
+            # Keywords that indicate top wear
             top_keywords = [
-                'shirt',
-                't-shirt',
-                'top',
-                'blouse',
-                'sweater',
-                'sweatshirt',
-                'hoodie',
-                'jacket',
-                'kurta',
-                'kameez']
-            if any(
-                    keyword in category or keyword in title for keyword in top_keywords):
+                'shirt', 'top', 'tee', 't-shirt', 'tshirt', 't shirt',
+                'blouse', 'sweater', 'sweatshirt', 'jacket', 'coat',
+                'blazer', 'hoodie', 'pullover', 'cardigan', 'vest',
+                'tank', 'cami', 'tunic', 'crop'
+            ]
+            
+            # Check product_type first
+            if any(keyword in product_type for keyword in top_keywords):
                 return 'Upperwear'
 
-            # Default to Upperwear if no clear match
-            return 'Upperwear'
+            # Then check category and title
+            if any(keyword in category for keyword in top_keywords) or \
+               any(keyword in title for keyword in top_keywords):
+                return 'Upperwear'
+
+            # If no clear match is found, check if it's likely a bottom based on context
+            likely_bottom_contexts = ['waist', 'inseam', 'rise', 'leg opening', 'crotch']
+            if any(context in title.lower() or context in category.lower() for context in likely_bottom_contexts):
+                return 'Bottomwear'
+
+            # Only default to Unknown if we're really unsure
+            return 'Unknown'
 
         products_df['wear_type'] = products_df.apply(infer_wear_type, axis=1)
 
@@ -1668,67 +1660,189 @@ class SupabaseMainOutfitsGenerator:
             
             target_style_lower = target_style.lower()
             
-            # ✅ ADDITIONAL SEASONAL FILTER: Remove winter items that might have slipped through
-            winter_keywords = [
-                'sweater', 'pullover', 'hoodie', 'hooded', 'sweatshirt', 'cardigan', 'jumper',
-                'wool', 'woollen', 'knit', 'thermal', 'fleece', 'winter', 'cold', 'warm', 'insulated',
-                'turtleneck', 'turtle neck', 'turtle-neck', 'mock neck', 'high neck', 'cable knit',
-                'chunky', 'thick', 'heavy', 'winter jacket', 'coat', 'blazer', 'jumper',
-                'angora', 'cashmere', 'merino', 'alpaca', 'fuzzy', 'furry', 'thermal',
-                'long sleeve', 'longsleeve', 'full sleeve', 'fullsleeve', 'warm jacket',
-                'winter coat', 'overcoat', 'pea coat', 'duffle coat', 'parka', 'anorak'
-            ]
+            # First, identify crop tops based on title
+            def is_crop_top(row):
+                title = str(row.get('title', '')).lower()
+                words = set(title.split())
+                return 'crop' in words and 'top' in words
             
-            # Filter out winter items using columns that exist
-            winter_mask = products_df['title'].str.lower().str.contains('|'.join(winter_keywords), na=False)
-            winter_mask |= products_df['scraped_category'].str.lower().str.contains('|'.join(winter_keywords), na=False)
-            winter_mask |= products_df['primary_style'].str.lower().str.contains('|'.join(winter_keywords), na=False)
-            winter_mask |= products_df['style_category'].str.lower().str.contains('|'.join(winter_keywords), na=False)
-            winter_mask |= products_df['product_type'].str.lower().str.contains('|'.join(winter_keywords), na=False)
+            # Mark crop tops
+            products_df['is_crop_top'] = products_df.apply(is_crop_top, axis=1)
             
-            # Remove winter items
-            products_df = products_df[~winter_mask]
-            logger.info(f"🌞 Style filter: Removed {winter_mask.sum()} winter items for {target_style}")
+            # For business casual, apply strict filtering
+            if target_style_lower == 'business casual':
+                # Exclude crop tops
+                products_df = products_df[~products_df['is_crop_top']]
+                
+                # Exclude kurtas for men
+                if 'gender' in products_df.columns and any(products_df['gender'].str.lower() == 'male'):
+                    kurta_mask = (
+                        products_df['title'].str.contains('kurta', case=False, na=False) |
+                        products_df['product_type'].str.contains('kurta', case=False, na=False)
+                    )
+                    products_df = products_df[~kurta_mask]
+                
+                # Exclude athleisure and streetwear items
+                casual_style_mask = (
+                    products_df['style_category'].str.contains('athleisure|streetwear', case=False, na=False) |
+                    products_df['primary_style'].str.contains('athleisure|streetwear', case=False, na=False)
+                )
+                products_df = products_df[~casual_style_mask]
+                
+                # Only keep business casual items
+                business_mask = (
+                    products_df['style_category'].str.contains('business casual|formal|semi formal', case=False, na=False) |
+                    products_df['primary_style'].str.contains('business casual|formal|semi formal', case=False, na=False) |
+                    products_df['title'].str.contains('formal|business|office|work', case=False, na=False)
+                )
+                products_df = products_df[business_mask]
             
-            # ✅ PRACTICAL APPROACH: Use the actual style fields from the database
-            # Check the style fields that actually exist in order of importance
-            style_matches = []
+            # For athleisure, apply strict filtering based on product types and style
+            elif target_style_lower == 'athleisure':
+                # First filter: Product type must be one of the core athleisure types
+                core_athleisure_types = {
+                    'Joggers', 'Hoodie', 'Leggings',  # These are predominantly athleisure
+                    'T-Shirt', 'Top'  # These need additional filtering
+                }
+                
+                # Create initial product type mask
+                product_type_mask = products_df['product_type'].isin(core_athleisure_types)
+                
+                # Second filter: Style category must be athleisure OR title must contain athletic keywords
+                athletic_keywords = {
+                    'Active', 'Sport', 'Athletic', 'Training', 'Gym', 'Workout',
+                    'Exercise', 'Fitness', 'Running', 'Yoga', 'Performance',
+                    'Track', 'Compression', 'Quick Dry', 'Moisture Wicking'
+                }
+                
+                # Add lowercase versions
+                athletic_keywords = list(athletic_keywords) + [k.lower() for k in athletic_keywords]
+                
+                # Create style and title mask
+                style_mask = (
+                    # Must be marked as athleisure in style category
+                    products_df['style_category'].str.contains('athleisure', case=False, na=False) |
+                    products_df['primary_style'].str.contains('athleisure', case=False, na=False) |
+                    
+                    # Or title must contain athletic keywords
+                    products_df['title'].str.contains('|'.join(athletic_keywords), case=False, na=False)
+                )
+                
+                # Third filter: Exclude non-athletic items
+                exclude_mask = (
+                    # Exclude formal/business styles
+                    products_df['style_category'].str.contains('business|formal|ethnic|party', case=False, na=False) |
+                    products_df['primary_style'].str.contains('business|formal|ethnic|party', case=False, na=False) |
+                    
+                    # Exclude specific product types that shouldn't be in athleisure
+                    products_df['product_type'].isin(['Shirt', 'Blouse', 'Blazer', 'Coat', 'Kurta', 'Dress', 'Jeans']) |
+                    
+                    # Exclude items with formal/business keywords in title
+                    products_df['title'].str.contains('formal|business|office|professional|work|smart casual|chinos?|denim|cotton', case=False, na=False)
+                )
+                
+                # Special handling for T-Shirts and Tops (which are less reliably athleisure)
+                is_tshirt_or_top = products_df['product_type'].isin(['T-Shirt', 'Top'])
+                needs_extra_filtering = is_tshirt_or_top
+                
+                # For T-Shirts and Tops, they MUST have athletic keywords in title or be marked as athleisure
+                extra_filter_mask = ~needs_extra_filtering | (needs_extra_filtering & style_mask)
+                
+                # Special handling for bottoms
+                is_bottom = products_df['wear_type'] == 'Bottomwear'
+                if is_bottom.any():
+                    # For bottoms, we need to be extra strict
+                    bottom_mask = (
+                        # Must be joggers or leggings
+                        products_df['product_type'].isin(['Joggers', 'Leggings']) &
+                        
+                        # Must not contain non-athletic terms in title
+                        ~products_df['title'].str.contains('chinos?|denim|cotton|trouser|cargo|jeans?|casual|regular|straight|slim|formal', case=False, na=False) &
+                        
+                        # Must be marked as athleisure or contain athletic keywords
+                        (
+                            products_df['style_category'].str.contains('athleisure', case=False, na=False) |
+                            products_df['primary_style'].str.contains('athleisure', case=False, na=False) |
+                            products_df['title'].str.contains('track|sport|gym|training|active|workout|athletic|running|performance', case=False, na=False)
+                        )
+                    )
+                    
+                    # Apply the bottom-specific mask only to bottoms
+                    product_type_mask = product_type_mask & (~is_bottom | (is_bottom & bottom_mask))
+                
+                # Final filtering: Combine all masks
+                products_df = products_df[
+                    product_type_mask &  # Must be a core athleisure product type
+                    ~exclude_mask &      # Must not be excluded
+                    extra_filter_mask    # Must pass extra filtering if needed
+                ]
+                
+            # For streetwear, include crop tops regardless of other style tags
+            elif target_style_lower == 'streetwear':
+                # Keep crop tops and other matching styles
+                style_mask = (
+                    products_df['is_crop_top'] |
+                    products_df['style_category'].str.contains(target_style_lower, case=False, na=False) |
+                    products_df['primary_style'].str.contains(target_style_lower, case=False, na=False) |
+                    products_df['title'].str.contains(target_style_lower, case=False, na=False) |
+                    products_df['product_type'].str.contains(target_style_lower, case=False, na=False)
+                )
+                products_df = products_df[style_mask]
             
-            # 1. Check style_category (most important - exists)
-            style_matches.append(products_df[
-                products_df['style_category'].str.contains(target_style_lower, case=False, na=False)
-            ])
-            
-            # 2. Check primary_style (exists)
-            style_matches.append(products_df[
-                products_df['primary_style'].str.contains(target_style_lower, case=False, na=False)
-            ])
-            
-            # 3. Check title for style keywords
-            style_matches.append(products_df[
-                products_df['title'].str.contains(target_style_lower, case=False, na=False)
-            ])
-            
-            # 4. Check product_type for style keywords
-            style_matches.append(products_df[
-                products_df['product_type'].str.contains(target_style_lower, case=False, na=False)
-            ])
-            
-            # Combine all matches and remove duplicates
-            if style_matches:
-                filtered_products = pd.concat(style_matches, ignore_index=True).drop_duplicates(subset=['product_id'])
+            # For other styles, proceed with normal filtering
             else:
-                filtered_products = pd.DataFrame()
+                style_matches = []
+                
+                # Check style fields in order of importance
+                style_matches.append(products_df[
+                    products_df['style_category'].str.contains(target_style_lower, case=False, na=False)
+                ])
+                
+                style_matches.append(products_df[
+                    products_df['primary_style'].str.contains(target_style_lower, case=False, na=False)
+                ])
+                
+                style_matches.append(products_df[
+                    products_df['title'].str.contains(target_style_lower, case=False, na=False)
+                ])
+                
+                style_matches.append(products_df[
+                    products_df['product_type'].str.contains(target_style_lower, case=False, na=False)
+                ])
+                
+                # Combine all matches and remove duplicates
+                if style_matches:
+                    products_df = pd.concat(style_matches, ignore_index=True).drop_duplicates(subset=['product_id'])
+                else:
+                    products_df = pd.DataFrame()
             
-            logger.info(f"🎨 Found {len(filtered_products)} products for style '{target_style}' using intelligent filtering")
+            # ✅ ADDITIONAL SEASONAL FILTER: Remove winter items
+            if target_style_lower == 'athleisure':
+                winter_keywords = {
+                    'Winter', 'Sweater', 'Pullover', 'Jacket', 'Coat',
+                    'Hoodie', 'Sweatshirt', 'Fleece', 'Cardigan', 'Wool',
+                    'Thermal', 'Warm', 'Cold Weather', 'Snow', 'Puffer',
+                    'Down Jacket', 'Quilted', 'Insulated', 'Heavy'
+                }
+                
+                # Add lowercase versions
+                winter_keywords = list(winter_keywords) + [k.lower() for k in winter_keywords]
+                
+                # Create winter item mask
+                is_winter = (
+                    products_df['title'].str.contains('|'.join(winter_keywords), case=False, na=False) |
+                    products_df['product_type'].str.contains('|'.join(winter_keywords), case=False, na=False)
+                )
+                
+                # Remove winter items
+                products_df = products_df[~is_winter]
+                
+                # Log winter item removal
+                removed_count = is_winter.sum()
+                if removed_count > 0:
+                    logger.info(f"🌞 Style filter: Removed {removed_count} winter items for athleisure")
             
-            # Debug: Log some sample products to verify filtering
-            if not filtered_products.empty:
-                sample_products = filtered_products.head(3)
-                for _, product in sample_products.iterrows():
-                    logger.info(f"  ✅ Sample: {product.get('title', 'N/A')} | Primary Style: {product.get('primary_style', 'N/A')} | Style: {product.get('style_category', 'N/A')} | ID: {product.get('product_id', 'N/A')}")
-            
-            return filtered_products
+            return products_df
             
         except Exception as e:
             logger.error(f"❌ Error filtering products by style: {e}")
@@ -1745,46 +1859,98 @@ class SupabaseMainOutfitsGenerator:
         try:
             outfits = []
             
-            # Separate tops and bottoms
-            tops = style_products[style_products['wear_type'] == 'Upperwear'].copy()
-            bottoms = style_products[style_products['wear_type'] == 'Bottomwear'].copy()
+            # Calculate target counts for one-piece and two-piece outfits
+            onepiece_target = min(int(count * 0.3), 3)  # 30% one-piece, max 3 per style
+            twopiece_target = count - onepiece_target
             
-            if tops.empty or bottoms.empty:
-                logger.warning(f"⚠️ Missing tops or bottoms for style: {style}")
-                return []
+            # First, try to find one-piece items (dresses, jumpsuits, etc.)
+            onepieces = style_products[style_products['wear_type'] == 'Onepiece'].copy()
+            if not onepieces.empty:
+                # Remove already used onepieces
+                onepieces = onepieces[~onepieces['product_id'].isin(used_top_ids)]
+                
+                # Generate onepiece outfits (limited to target)
+                for _, onepiece in onepieces.iterrows():
+                    if len(outfits) >= onepiece_target:
+                        break
+                    outfit = self._create_outfit_data_onepiece(onepiece, user_data, len(outfits) + 1, style)
+                    if outfit:
+                        outfits.append(outfit)
+                        used_top_ids.add(onepiece['product_id'])
             
-            # Remove already used products
-            tops = tops[~tops['product_id'].isin(used_top_ids)]
-            bottoms = bottoms[~bottoms['product_id'].isin(used_bottom_ids)]
+            # Generate two-piece outfits for the remaining count
+            remaining_count = count - len(outfits)
+            if remaining_count > 0:
+                # Get tops and bottoms (excluding onepieces)
+                tops = style_products[style_products['wear_type'] == 'Upperwear'].copy()
+                bottoms = style_products[style_products['wear_type'] == 'Bottomwear'].copy()
+                
+                if not tops.empty and not bottoms.empty:
+                    # Remove already used products
+                    tops = tops[~tops['product_id'].isin(used_top_ids)]
+                    bottoms = bottoms[~bottoms['product_id'].isin(used_bottom_ids)]
+                    
+                    if not tops.empty and not bottoms.empty:
+                        # Generate remaining outfits with tops and bottoms
+                        for i in range(remaining_count):
+                            if tops.empty or bottoms.empty:
+                                break
+                            
+                            # Select random top and bottom
+                            top = tops.sample(n=1).iloc[0]
+                            bottom = bottoms.sample(n=1).iloc[0]
+                            
+                            # Remove selected products from available pool
+                            tops = tops[tops['product_id'] != top['product_id']]
+                            bottoms = bottoms[bottoms['product_id'] != bottom['product_id']]
+                            
+                            # Add to used sets
+                            used_top_ids.add(top['product_id'])
+                            used_bottom_ids.add(bottom['product_id'])
+                            
+                            # Generate outfit data
+                            outfit = self._create_outfit_data(
+                                top, bottom, user_data, len(outfits) + 1, style
+                            )
+                            if outfit:
+                                outfits.append(outfit)
             
-            if tops.empty or bottoms.empty:
-                logger.warning(f"⚠️ No unused products available for style: {style}")
-                return []
-            
-            # Generate outfits
-            for i in range(count):
-                if tops.empty or bottoms.empty:
-                    logger.warning(f"⚠️ Ran out of products for style: {style}")
-                    break
+            # If we couldn't generate enough outfits with the desired mix,
+            # fill remaining slots with whatever type we can
+            remaining_count = count - len(outfits)
+            if remaining_count > 0:
+                # Try to fill with one-pieces first
+                if not onepieces.empty:
+                    onepieces = onepieces[~onepieces['product_id'].isin(used_top_ids)]
+                    for _, onepiece in onepieces.iterrows():
+                        if len(outfits) >= count:
+                            break
+                        outfit = self._create_outfit_data_onepiece(onepiece, user_data, len(outfits) + 1, style)
+                        if outfit:
+                            outfits.append(outfit)
+                            used_top_ids.add(onepiece['product_id'])
                 
-                # Select random top and bottom
-                top = tops.sample(n=1).iloc[0]
-                bottom = bottoms.sample(n=1).iloc[0]
-                
-                # Remove selected products from available pool
-                tops = tops[tops['product_id'] != top['product_id']]
-                bottoms = bottoms[bottoms['product_id'] != bottom['product_id']]
-                
-                # Add to used sets
-                used_top_ids.add(top['product_id'])
-                used_bottom_ids.add(bottom['product_id'])
-                
-                # Generate outfit data
-                outfit = self._create_outfit_data(
-                    top, bottom, user_data, len(outfits) + 1, style
-                )
-                
-                outfits.append(outfit)
+                # If still needed, try two-pieces
+                remaining_count = count - len(outfits)
+                if remaining_count > 0 and not tops.empty and not bottoms.empty:
+                    for i in range(remaining_count):
+                        if tops.empty or bottoms.empty:
+                            break
+                        
+                        top = tops.sample(n=1).iloc[0]
+                        bottom = bottoms.sample(n=1).iloc[0]
+                        
+                        tops = tops[tops['product_id'] != top['product_id']]
+                        bottoms = bottoms[bottoms['product_id'] != bottom['product_id']]
+                        
+                        used_top_ids.add(top['product_id'])
+                        used_bottom_ids.add(bottom['product_id'])
+                        
+                        outfit = self._create_outfit_data(
+                            top, bottom, user_data, len(outfits) + 1, style
+                        )
+                        if outfit:
+                            outfits.append(outfit)
             
             return outfits
             
@@ -4320,6 +4486,165 @@ class SupabaseMainOutfitsGenerator:
         elif any(keyword in title for keyword in ['mid', 'regular']):
             return 'mid'
         return 'unknown'
+
+    def _create_outfit_data_onepiece(self, onepiece: pd.Series, user_data: Dict, rank: int, style: str) -> Dict:
+        """Create outfit data for a one-piece item (dress, jumpsuit, etc.)."""
+        try:
+            if not isinstance(onepiece, pd.Series):
+                return {}
+            
+            onepiece_id = onepiece.get('product_id', '')
+            color = self._extract_color(onepiece)
+            outfit_name = self._generate_outfit_name(onepiece, onepiece, style)
+            outfit_description = self._generate_outfit_description(onepiece, onepiece, style)
+            explanation = self._generate_outfit_explanation(onepiece, onepiece, user_data, style)
+            why_picked = self._generate_why_picked_explanation_enhanced(onepiece, onepiece, user_data, style)
+            
+            # Calculate score for the onepiece
+            onepiece_score = self._calculate_product_score(onepiece, user_data)
+            
+            outfit_data = {
+                'main_outfit_id': f"main_{user_data.get('id', 'unknown')}_{rank}",
+                'rank': rank,
+                'score': float(onepiece_score),
+                'explanation': explanation or f"Stylish {onepiece.get('product_type', 'one-piece outfit')}",
+                'why_picked_explanation': why_picked or "Carefully selected based on your preferences",
+                'outfit_name': outfit_name or f"{style.upper()} {onepiece.get('product_type', 'ONEPIECE').upper()}",
+                'outfit_description': outfit_description or f"A beautiful {onepiece.get('product_type', 'one-piece')} that matches your style",
+                'top_id': str(onepiece_id),
+                'bottom_id': '0000',  # Placeholder for one-piece items
+                'top_title': str(onepiece.get('title', '')),
+                'bottom_title': '',  # Empty string instead of None
+                'top_color': color,
+                'bottom_color': '',  # Empty string instead of None
+                'top_style': str(style).title(),
+                'bottom_style': str(style).title(),  # Same as top style
+                'top_price': float(onepiece.get('price', 0)),
+                'bottom_price': 0.0,  # Zero price for placeholder bottom
+                'top_image': str(onepiece.get('image_url', '')),
+                'bottom_image': '',  # Empty string instead of None
+                'top_semantic_score': float(onepiece_score),
+                'bottom_semantic_score': 0.0,  # Zero score for placeholder bottom
+                'user_id': int(user_data.get('id', 0)),
+                'generation_method': 'enhanced_supabase',
+                'total_price': float(onepiece.get('price', 0))
+            }
+            
+            return outfit_data
+            
+        except Exception as e:
+            logger.error(f"❌ Error creating onepiece outfit data: {e}")
+            return {}
+
+    def _generate_style_specific_outfits(self, 
+                                       style_products: pd.DataFrame,
+                                       user_data: Dict,
+                                       count: int,
+                                       used_top_ids: set,
+                                       used_bottom_ids: set,
+                                       style: str) -> List[Dict]:
+        """Generate outfits for a specific style with product diversity."""
+        try:
+            outfits = []
+            
+            # Calculate target counts for one-piece and two-piece outfits
+            onepiece_target = min(int(count * 0.3), 3)  # 30% one-piece, max 3 per style
+            twopiece_target = count - onepiece_target
+            
+            # First, try to find one-piece items (dresses, jumpsuits, etc.)
+            onepieces = style_products[style_products['wear_type'] == 'Onepiece'].copy()
+            if not onepieces.empty:
+                # Remove already used onepieces
+                onepieces = onepieces[~onepieces['product_id'].isin(used_top_ids)]
+                
+                # Generate onepiece outfits (limited to target)
+                for _, onepiece in onepieces.iterrows():
+                    if len(outfits) >= onepiece_target:
+                        break
+                    outfit = self._create_outfit_data_onepiece(onepiece, user_data, len(outfits) + 1, style)
+                    if outfit:
+                        outfits.append(outfit)
+                        used_top_ids.add(onepiece['product_id'])
+            
+            # Generate two-piece outfits for the remaining count
+            remaining_count = count - len(outfits)
+            if remaining_count > 0:
+                # Get tops and bottoms (excluding onepieces)
+                tops = style_products[style_products['wear_type'] == 'Upperwear'].copy()
+                bottoms = style_products[style_products['wear_type'] == 'Bottomwear'].copy()
+                
+                if not tops.empty and not bottoms.empty:
+                    # Remove already used products
+                    tops = tops[~tops['product_id'].isin(used_top_ids)]
+                    bottoms = bottoms[~bottoms['product_id'].isin(used_bottom_ids)]
+                    
+                    if not tops.empty and not bottoms.empty:
+                        # Generate remaining outfits with tops and bottoms
+                        for i in range(remaining_count):
+                            if tops.empty or bottoms.empty:
+                                break
+                            
+                            # Select random top and bottom
+                            top = tops.sample(n=1).iloc[0]
+                            bottom = bottoms.sample(n=1).iloc[0]
+                            
+                            # Remove selected products from available pool
+                            tops = tops[tops['product_id'] != top['product_id']]
+                            bottoms = bottoms[bottoms['product_id'] != bottom['product_id']]
+                            
+                            # Add to used sets
+                            used_top_ids.add(top['product_id'])
+                            used_bottom_ids.add(bottom['product_id'])
+                            
+                            # Generate outfit data
+                            outfit = self._create_outfit_data(
+                                top, bottom, user_data, len(outfits) + 1, style
+                            )
+                            if outfit:
+                                outfits.append(outfit)
+            
+            # If we couldn't generate enough outfits with the desired mix,
+            # fill remaining slots with whatever type we can
+            remaining_count = count - len(outfits)
+            if remaining_count > 0:
+                # Try to fill with one-pieces first
+                if not onepieces.empty:
+                    onepieces = onepieces[~onepieces['product_id'].isin(used_top_ids)]
+                    for _, onepiece in onepieces.iterrows():
+                        if len(outfits) >= count:
+                            break
+                        outfit = self._create_outfit_data_onepiece(onepiece, user_data, len(outfits) + 1, style)
+                        if outfit:
+                            outfits.append(outfit)
+                            used_top_ids.add(onepiece['product_id'])
+                
+                # If still needed, try two-pieces
+                remaining_count = count - len(outfits)
+                if remaining_count > 0 and not tops.empty and not bottoms.empty:
+                    for i in range(remaining_count):
+                        if tops.empty or bottoms.empty:
+                            break
+                        
+                        top = tops.sample(n=1).iloc[0]
+                        bottom = bottoms.sample(n=1).iloc[0]
+                        
+                        tops = tops[tops['product_id'] != top['product_id']]
+                        bottoms = bottoms[bottoms['product_id'] != bottom['product_id']]
+                        
+                        used_top_ids.add(top['product_id'])
+                        used_bottom_ids.add(bottom['product_id'])
+                        
+                        outfit = self._create_outfit_data(
+                            top, bottom, user_data, len(outfits) + 1, style
+                        )
+                        if outfit:
+                            outfits.append(outfit)
+            
+            return outfits
+            
+        except Exception as e:
+            logger.error(f"❌ Error generating style-specific outfits: {e}")
+            return []
 
 def main():
     """Main function to test the enhanced Supabase outfit generator."""
