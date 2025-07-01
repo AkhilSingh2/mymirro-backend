@@ -103,10 +103,12 @@ class SupabaseDB:
         try:
             logger.info("🔍 Starting get_products...")
             # ✅ FIX: Include product_id column for proper product identification
+            # ✅ ENHANCED: Added primary_style_multi for multi-style filtering capability
             needed_columns = [
                 'id', 'product_id', 'title', 'product_type', 'gender',
                 'primary_style', 'primary_color', 'image_url',
-                'full_caption', 'product_embedding', 'scraped_category', 'style_category'
+                'full_caption', 'product_embedding', 'scraped_category', 'style_category',
+                'primary_style_multi'
             ]
             query = self.client.table('tagged_products').select(','.join(needed_columns))
             if limit:
@@ -151,7 +153,8 @@ class SupabaseDB:
                 needed_columns = [
                     'id', 'product_id', 'title', 'product_type', 'gender',
                     'primary_style', 'primary_color', 'image_url',
-                    'full_caption', 'product_embedding', 'scraped_category', 'style_category'
+                    'full_caption', 'product_embedding', 'scraped_category', 'style_category',
+                    'primary_style_multi'
                 ]
                 query = self.client.table('tagged_products').select(','.join(needed_columns))
                 

@@ -648,17 +648,60 @@ class SupabaseMainOutfitsGenerator:
                 'tank', 'cami', 'tunic', 'crop'
             ]
             
-            # Check product_type first
+            # ✅ ENHANCED: Keywords that indicate bottom wear (comprehensive list)
+            bottom_keywords = [
+                'shorts', 'joggers', 'pants', 'trousers', 'jeans', 'leggings', 
+                'skirt', 'chinos', 'cargo', 'track pants', 'sweatpants',
+                'palazzo', 'culottes', 'capri', 'bermuda', 'denim',
+                'trouser', 'pant', 'jean', 'slack', 'slacks', 'cigarette pants',
+                'straight pants', 'wide leg pants', 'bootcut pants', 'cropped pants',
+                'ankle pants', 'high waist pants', 'lowrise', 'low rise'
+            ]
+            
+            # ✅ ENHANCED: Keywords that indicate one-piece items (prioritize dress detection)
+            onepiece_keywords = [
+                'dress', 'jumpsuit', 'romper', 'overall', 'bodysuit',
+                'gown', 'maxi dress', 'mini dress', 'midi dress',
+                'wrap dress', 'shirt dress', 'collar dress', 'shirtdress'
+            ]
+            
+            # ✅ FIX: Keywords that indicate accessories (CRITICAL - was completely missing!)
+            accessory_keywords = [
+                'watch', 'belt', 'bag', 'purse', 'backpack', 'wallet',
+                'jewelry', 'necklace', 'bracelet', 'earring', 'ring',
+                'sunglasses', 'hat', 'cap', 'scarf', 'tie', 'bow tie',
+                'shoes', 'sandals', 'boots', 'sneakers', 'loafers',
+                'socks', 'stockings', 'tights', 'gloves', 'mittens'
+            ]
+            
+            # ✅ PRIORITIZE ACCESSORY DETECTION: Check for accessories first in ALL fields
+            if any(keyword in product_type for keyword in accessory_keywords) or \
+               any(keyword in category for keyword in accessory_keywords) or \
+               any(keyword in title for keyword in accessory_keywords):
+                return 'Accessory'
+            
+            # ✅ PRIORITIZE ONEPIECE DETECTION: Check for dresses/onepieces in ALL fields (before tops)
+            if any(keyword in product_type for keyword in onepiece_keywords) or \
+               any(keyword in category for keyword in onepiece_keywords) or \
+               any(keyword in title for keyword in onepiece_keywords):
+                return 'Onepiece'
+            
+            # Then check other wear types in product_type
             if any(keyword in product_type for keyword in top_keywords):
                 return 'Upperwear'
+            elif any(keyword in product_type for keyword in bottom_keywords):
+                return 'Bottomwear'
 
-            # Then check category and title
-            if any(keyword in category for keyword in top_keywords) or \
+            # Then check category and title for remaining types  
+            elif any(keyword in category for keyword in top_keywords) or \
                any(keyword in title for keyword in top_keywords):
                 return 'Upperwear'
+            elif any(keyword in category for keyword in bottom_keywords) or \
+                 any(keyword in title for keyword in bottom_keywords):
+                return 'Bottomwear'
 
             # If no clear match is found, check if it's likely a bottom based on context
-            likely_bottom_contexts = ['waist', 'inseam', 'rise', 'leg opening', 'crotch']
+            likely_bottom_contexts = ['waist', 'inseam', 'rise', 'leg opening', 'crotch', 'hip', 'thigh']
             if any(context in title.lower() or context in category.lower() for context in likely_bottom_contexts):
                 return 'Bottomwear'
 
@@ -1689,10 +1732,11 @@ class SupabaseMainOutfitsGenerator:
                 )
                 products_df = products_df[~casual_style_mask]
                 
-                # Only keep business casual items
+                # ✅ ENHANCED: Keep business casual items (check multi-style too)
                 business_mask = (
                     products_df['style_category'].str.contains('business casual|formal|semi formal', case=False, na=False) |
                     products_df['primary_style'].str.contains('business casual|formal|semi formal', case=False, na=False) |
+                    products_df['primary_style_multi'].str.contains('business casual|formal|semi formal', case=False, na=False) |
                     products_df['title'].str.contains('formal|business|office|work', case=False, na=False)
                 )
                 products_df = products_df[business_mask]
@@ -1779,11 +1823,12 @@ class SupabaseMainOutfitsGenerator:
                 
             # For streetwear, include crop tops regardless of other style tags
             elif target_style_lower == 'streetwear':
-                # Keep crop tops and other matching styles
+                # ✅ ENHANCED: Check both style_category AND primary_style_multi for streetwear
                 style_mask = (
                     products_df['is_crop_top'] |
                     products_df['style_category'].str.contains(target_style_lower, case=False, na=False) |
                     products_df['primary_style'].str.contains(target_style_lower, case=False, na=False) |
+                    products_df['primary_style_multi'].str.contains(target_style_lower, case=False, na=False) |
                     products_df['title'].str.contains(target_style_lower, case=False, na=False) |
                     products_df['product_type'].str.contains(target_style_lower, case=False, na=False)
                 )
@@ -1793,13 +1838,18 @@ class SupabaseMainOutfitsGenerator:
             else:
                 style_matches = []
                 
-                # Check style fields in order of importance
+                # ✅ ENHANCED: Check style fields in order of importance (including primary_style_multi)
                 style_matches.append(products_df[
                     products_df['style_category'].str.contains(target_style_lower, case=False, na=False)
                 ])
                 
                 style_matches.append(products_df[
                     products_df['primary_style'].str.contains(target_style_lower, case=False, na=False)
+                ])
+                
+                # ✅ NEW: Check primary_style_multi for multi-style products
+                style_matches.append(products_df[
+                    products_df['primary_style_multi'].str.contains(target_style_lower, case=False, na=False)
                 ])
                 
                 style_matches.append(products_df[
@@ -1842,6 +1892,40 @@ class SupabaseMainOutfitsGenerator:
                 if removed_count > 0:
                     logger.info(f"🌞 Style filter: Removed {removed_count} winter items for athleisure")
             
+            # ✅ NEW: Business Casual Filter - Remove inappropriate items
+            elif target_style_lower == 'business casual':
+                business_casual_exclude_keywords = {
+                    # Heavy winter items inappropriate for business casual
+                    'Sweater', 'Pullover', 'Turtleneck', 'Turtle Neck', 'Turtle-Neck',
+                    'Mock Neck', 'High Neck', 'Waistcoat', 'Cardigan', 'Jumper',
+                    'Hoodie', 'Hooded', 'Sweatshirt', 'Fleece', 'Wool Sweater',
+                    'Knit Sweater', 'Cable Knit', 'Chunky Knit', 'Heavy Sweater',
+                    'Winter Jacket', 'Puffer', 'Down Jacket', 'Quilted Jacket',
+                    'Thermal', 'Heavy Jacket', 'Insulated Jacket', 'Parka',
+                    'Overcoat', 'Winter Coat', 'Heavy Coat',
+                    # Athletic/workout items inappropriate for business casual
+                    'Tights', 'Tight', 'Leggings', 'Yoga Pants', 'Workout',
+                    'Athletic', 'Sports Bra', 'Tank Top', 'Compression',
+                    'High-Waist Tight', 'Ankle Length Tights', 'Shimmer'
+                }
+                
+                # Add lowercase versions
+                bc_exclude_keywords = list(business_casual_exclude_keywords) + [k.lower() for k in business_casual_exclude_keywords]
+                
+                # Create exclusion mask - prioritize title, then scraped_category
+                is_inappropriate_winter = (
+                    products_df['title'].str.contains('|'.join(bc_exclude_keywords), case=False, na=False) |
+                    products_df['scraped_category'].str.contains('|'.join(bc_exclude_keywords), case=False, na=False)
+                )
+                
+                # Remove inappropriate winter items
+                products_df = products_df[~is_inappropriate_winter]
+                
+                # Log removal
+                removed_count = is_inappropriate_winter.sum()
+                if removed_count > 0:
+                    logger.info(f"👔 Style filter: Removed {removed_count} inappropriate items (winter/athletic) for business casual")
+            
             return products_df
             
         except Exception as e:
@@ -1859,8 +1943,14 @@ class SupabaseMainOutfitsGenerator:
         try:
             outfits = []
             
-            # Calculate target counts for one-piece and two-piece outfits
-            onepiece_target = min(int(count * 0.3), 3)  # 30% one-piece, max 3 per style
+            # ✅ ENHANCED: Calculate target counts for one-piece and two-piece outfits
+            # Special handling for business casual female: prioritize dresses (30% minimum)
+            if style.lower() == 'business casual' and user_data.get('Gender', '').lower() in ['female', 'women']:
+                onepiece_target = max(int(count * 0.3), 3)  # At least 30% dresses, minimum 3
+                logger.info(f"👗 Business casual female: targeting {onepiece_target} dresses out of {count} outfits")
+            else:
+                onepiece_target = min(int(count * 0.3), 3)  # 30% one-piece, max 3 per style
+            
             twopiece_target = count - onepiece_target
             
             # First, try to find one-piece items (dresses, jumpsuits, etc.)
@@ -1868,6 +1958,9 @@ class SupabaseMainOutfitsGenerator:
             if not onepieces.empty:
                 # Remove already used onepieces
                 onepieces = onepieces[~onepieces['product_id'].isin(used_top_ids)]
+                
+                # ✅ ENHANCED: Add logging for dress availability
+                logger.info(f"👗 Available dresses for {style}: {len(onepieces)} (targeting {onepiece_target})")
                 
                 # Generate onepiece outfits (limited to target)
                 for _, onepiece in onepieces.iterrows():
@@ -1877,6 +1970,10 @@ class SupabaseMainOutfitsGenerator:
                     if outfit:
                         outfits.append(outfit)
                         used_top_ids.add(onepiece['product_id'])
+                        logger.info(f"👗 Added dress: {onepiece.get('title', 'Unknown')}")
+            else:
+                # ✅ ENHANCED: Log when no dresses are available
+                logger.warning(f"👗 No dresses available for {style} - will generate two-piece outfits instead")
             
             # Generate two-piece outfits for the remaining count
             remaining_count = count - len(outfits)
@@ -1891,18 +1988,47 @@ class SupabaseMainOutfitsGenerator:
                     bottoms = bottoms[~bottoms['product_id'].isin(used_bottom_ids)]
                     
                     if not tops.empty and not bottoms.empty:
+                        # ✅ ENHANCED: Implement diversity logic for streetwear to reduce shorts dominance
+                        shorts_count = 0
+                        max_shorts = max(1, int(remaining_count * 0.3))  # Max 30% shorts
+                        
+                        # Separate shorts and non-shorts for diversity
+                        shorts_bottoms = bottoms[bottoms['product_type'] == 'Shorts'].copy()
+                        non_shorts_bottoms = bottoms[bottoms['product_type'] != 'Shorts'].copy()
+                        
                         # Generate remaining outfits with tops and bottoms
                         for i in range(remaining_count):
                             if tops.empty or bottoms.empty:
                                 break
                             
-                            # Select random top and bottom
+                            # Select random top
                             top = tops.sample(n=1).iloc[0]
-                            bottom = bottoms.sample(n=1).iloc[0]
                             
-                            # Remove selected products from available pool
+                            # ✅ ENHANCED: Smart bottom selection for streetwear diversity
+                            if style.lower() == 'streetwear' and shorts_count < max_shorts and not shorts_bottoms.empty and not non_shorts_bottoms.empty:
+                                # For streetwear: 70% chance of non-shorts, 30% chance of shorts
+                                if len(outfits) % 3 == 0 and shorts_count < max_shorts:  # Every 3rd outfit can be shorts
+                                    available_bottoms = shorts_bottoms
+                                    shorts_count += 1
+                                else:
+                                    available_bottoms = non_shorts_bottoms
+                            else:
+                                # For other styles or when quotas are reached: use all available bottoms
+                                available_bottoms = bottoms
+                            
+                            if available_bottoms.empty:
+                                available_bottoms = bottoms  # Fallback to all bottoms
+                            
+                            # Select bottom from available pool
+                            bottom = available_bottoms.sample(n=1).iloc[0]
+                            
+                            # Remove selected products from all relevant pools
                             tops = tops[tops['product_id'] != top['product_id']]
                             bottoms = bottoms[bottoms['product_id'] != bottom['product_id']]
+                            if not shorts_bottoms.empty:
+                                shorts_bottoms = shorts_bottoms[shorts_bottoms['product_id'] != bottom['product_id']]
+                            if not non_shorts_bottoms.empty:
+                                non_shorts_bottoms = non_shorts_bottoms[non_shorts_bottoms['product_id'] != bottom['product_id']]
                             
                             # Add to used sets
                             used_top_ids.add(top['product_id'])
@@ -1933,15 +2059,41 @@ class SupabaseMainOutfitsGenerator:
                 # If still needed, try two-pieces
                 remaining_count = count - len(outfits)
                 if remaining_count > 0 and not tops.empty and not bottoms.empty:
+                    # ✅ ENHANCED: Apply same diversity logic in fallback section
+                    current_shorts_count = sum(1 for outfit in outfits if 'Shorts' in str(outfit.get('bottom_title', '')))
+                    max_total_shorts = max(1, int(count * 0.3))  # Max 30% of total outfits
+                    
+                    shorts_bottoms = bottoms[bottoms['product_type'] == 'Shorts'].copy()
+                    non_shorts_bottoms = bottoms[bottoms['product_type'] != 'Shorts'].copy()
+                    
                     for i in range(remaining_count):
                         if tops.empty or bottoms.empty:
                             break
                         
                         top = tops.sample(n=1).iloc[0]
-                        bottom = bottoms.sample(n=1).iloc[0]
                         
+                        # Apply diversity logic here too
+                        if style.lower() == 'streetwear' and current_shorts_count < max_total_shorts and not shorts_bottoms.empty and not non_shorts_bottoms.empty:
+                            if len(outfits) % 3 == 0 and current_shorts_count < max_total_shorts:
+                                available_bottoms = shorts_bottoms
+                                current_shorts_count += 1
+                            else:
+                                available_bottoms = non_shorts_bottoms
+                        else:
+                            available_bottoms = bottoms
+                        
+                        if available_bottoms.empty:
+                            available_bottoms = bottoms
+                        
+                        bottom = available_bottoms.sample(n=1).iloc[0]
+                        
+                        # Remove from all pools
                         tops = tops[tops['product_id'] != top['product_id']]
                         bottoms = bottoms[bottoms['product_id'] != bottom['product_id']]
+                        if not shorts_bottoms.empty:
+                            shorts_bottoms = shorts_bottoms[shorts_bottoms['product_id'] != bottom['product_id']]
+                        if not non_shorts_bottoms.empty:
+                            non_shorts_bottoms = non_shorts_bottoms[non_shorts_bottoms['product_id'] != bottom['product_id']]
                         
                         used_top_ids.add(top['product_id'])
                         used_bottom_ids.add(bottom['product_id'])
