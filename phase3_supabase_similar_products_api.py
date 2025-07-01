@@ -87,10 +87,10 @@ class SupabaseEnhancedSimilarProductsGenerator:
             'user_preference_weight': 2.5,   # User preference boost
             'wear_caption_weight': 2.2,      # Lower/upper wear caption matching
             'diversity_bonus': 0.3,          # Bonus for diverse but relevant products
-            'min_similarity_score': 0.05,    # ✅ LOWERED: for production (was 0.15)
-            'max_similar_products': 20,      # Maximum products to return
+            'min_similarity_score': 0.01,    # ✅ LOWERED: Much lower threshold to get more results
+            'max_similar_products': 50,      # ✅ INCREASED: More products to return
             'color_diversity_threshold': 0.7, # Threshold for color diversity bonus
-            'confidence_threshold': 0.1,      # ✅ LOWERED: Minimum similarity score for inclusion (was 0.2)
+            'confidence_threshold': 0.05,     # ✅ LOWERED: Much lower threshold for inclusion
             'enable_diversity_filtering': False,  # Temporarily disable diversity filtering
         }
         
@@ -579,7 +579,7 @@ class SupabaseEnhancedSimilarProductsGenerator:
         
         # 1. Core similar products (same category, similar features)
         core_candidates = self.search_similar_products_faiss(
-            source_text, source_product_type, k=100
+            source_text, source_product_type, k=200  # ✅ INCREASED: More candidates for better results
         )
         for candidate in core_candidates:
             candidate['candidate_type'] = 'core_similar'
@@ -737,9 +737,15 @@ class SupabaseEnhancedSimilarProductsGenerator:
         
         for candidate in candidates:
             candidate_product = candidate['product']
-            candidate_id = str(candidate_product.get('product_id', ''))
+            # Use the actual product_id from the candidate dict, not from the product series
+            candidate_id = str(candidate.get('product_id', candidate_product.get('product_id', '')))
             
-            if candidate_id in seen_products or candidate_id == source_product_id:
+            # ✅ ENHANCED: Strict self-exclusion and duplicate prevention
+            if (candidate_id in seen_products or 
+                candidate_id == source_product_id or 
+                candidate_id == str(source_product_id) or
+                not candidate_id or 
+                candidate_id == ''):
                 continue
             
             if filters and not self._passes_filters(candidate_product, filters):
@@ -760,7 +766,7 @@ class SupabaseEnhancedSimilarProductsGenerator:
                 'brand': candidate_product.get('brand', ''),
                 'style': candidate_product.get('enhanced_primary_style', candidate_product.get('primary_style', '')),
                 'color': candidate_product.get('primary_color', ''),
-                'product_type': candidate_product.get('product_type', ''),
+                'wear_type': candidate_product.get('product_type', ''),  # API expects 'wear_type' not 'product_type'
                 'occasion': candidate_product.get('enhanced_occasion', candidate_product.get('occasion', '')),
                 'similarity_score': similarity_score,
                 'score_breakdown': score_breakdown,
@@ -1020,7 +1026,8 @@ class SupabaseEnhancedSimilarProductsGenerator:
                             emb = json.loads(emb)
                         emb = np.array(emb)
                         embeddings.append(emb)
-                        product_indices.append(idx)
+                        # Use the actual product_id instead of the dataframe index
+                        product_indices.append(str(row.get('product_id', idx)))
                         valid_products.append(row)
                     except Exception as e:
                         continue
@@ -1149,16 +1156,16 @@ class SupabaseEnhancedSimilarProductsGenerator:
                 logger.warning(f"⚠️ FAISS index {faiss_idx} >= mapping length {len(product_mapping['indices'])}")
                 continue
             
-            # ✅ ENHANCED: Lower threshold for production - accept more candidates
-            if score < 0.1:  # Very low threshold (was implicitly filtering higher scores)
-                logger.debug(f"⚠️ Score {score:.4f} below threshold 0.1")
+            # ✅ ENHANCED: Much lower threshold for production - accept more candidates
+            if score < 0.05:  # Much lower threshold to get more results
+                logger.debug(f"⚠️ Score {score:.4f} below threshold 0.05")
                 continue
                 
-            product_idx = product_mapping['indices'][faiss_idx]
+            product_id = product_mapping['indices'][faiss_idx]  # This is now the actual product_id
             product = product_mapping['products'].iloc[faiss_idx]
             
             candidates.append({
-                'product_idx': product_idx,
+                'product_id': product_id,
                 'product': product,
                 'semantic_score': float(score),
                 'faiss_rank': i + 1
@@ -1168,77 +1175,6 @@ class SupabaseEnhancedSimilarProductsGenerator:
         logger.info(f"✅ FAISS search found {valid_candidates}/{k} valid candidates for {product_type}")
         return candidates
 
-def main():
-    """Test the Supabase enhanced same-category similar products generator."""
-    
-    # Initialize enhanced generator
-    generator = SupabaseEnhancedSimilarProductsGenerator()
-    
-    # Sample user preferences
-    user_preferences = {
-        'preferred_styles': ['Business Formal', 'Formal'],
-        'preferred_colors': ['Black', 'Navy', 'White'],
-    }
-    
-    # Sample filters
-    filters = {
-        # ✅ REMOVED: No longer using styles filter, only essential filters
-    }
-    
-    # Test with enhanced same-category features - using product ID 2859 as requested
-    test_product_id = "2859"
-    
-    logger.info(f"🔍 Testing Enhanced Same-Category Phase 3 with Supabase for product: {test_product_id}")
-    
-    try:
-        similar_products = generator.find_similar_products(
-            test_product_id, 
-            num_similar=8,
-            user_preferences=user_preferences,
-            filters=filters
-        )
-        
-        if similar_products:
-            print(f"\n✅ SUCCESS: Found {len(similar_products)} diverse same-category products")
-            print("=" * 80)
-            
-            for i, product in enumerate(similar_products, 1):
-                score = product['similarity_score']
-                price = product['price']
-                ptype = product.get('candidate_type', 'unknown')
-                
-                print(f"\n{i}. {product['title'][:55]}...")
-                print(f"   Score: {score:.3f} | Type: {ptype}")
-                print(f"   Price: ₹{price} | Style: {product['style']}")
-                print(f"   Color: {product['color']} | Wear: {product['product_type']}")
-                
-                # Show score breakdown for first few
-                if i <= 3:
-                    breakdown = product['score_breakdown']
-                    print(f"   Breakdown: Semantic={breakdown['semantic_similarity']:.2f}, "
-                          f"Style={breakdown['style_compatibility']:.2f}, "
-                          f"Color_Div={breakdown['color_diversity']:.2f}, "
-                          f"Design_Div={breakdown['design_diversity']:.2f}")
-            
-            print(f"\n🔗 Enhanced Same-Category API: GET /api/products/{test_product_id}/similar?count=8&diverse=true&personalized=true")
-        else:
-            print(f"\n❌ No enhanced similar products found")
-            
-    except Exception as e:
-        print(f"\n❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        # Try to get more specific error information
-        if "timeout" in str(e).lower():
-            print(f"\n⚠️ Database timeout detected. This might be due to:")
-            print(f"   - Large number of products in the database")
-            print(f"   - Network connectivity issues")
-            print(f"   - Database server load")
-            print(f"\n💡 Suggestions:")
-            print(f"   - Try with a smaller product subset")
-            print(f"   - Check database connection")
-            print(f"   - Consider adding pagination to product loading")
-
 if __name__ == "__main__":
-    main() 
+    # This file is imported by the main app, no standalone execution needed
+    pass 
