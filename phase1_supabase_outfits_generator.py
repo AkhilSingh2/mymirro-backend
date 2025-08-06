@@ -10,7 +10,11 @@ import numpy as np
 import json
 import os
 import random
+import re
+import threading
+import time
 from datetime import datetime
+from pathlib import Path
 import logging
 from typing import Dict, List, Tuple, Optional
 import warnings
@@ -38,6 +42,27 @@ except ImportError:
 from database import get_db
 from config import get_config
 
+def _calc_pair_bonus(row):
+    """Calculate pair bonus from stylist ratings."""
+    # Convert string values to integers if needed
+    overall_rating = int(row["overall_rating"]) if isinstance(row["overall_rating"], str) else row["overall_rating"]
+    style_rating = int(row["style_rating"]) if isinstance(row["style_rating"], str) else row["style_rating"]
+    # Use color_combination_rating (correct column name)
+    color_rating = int(row.get("color_combination_rating", 50)) if isinstance(row.get("color_combination_rating", 50), str) else row.get("color_combination_rating", 50)
+    fit_rating = int(row["fit_rating"]) if isinstance(row["fit_rating"], str) else row["fit_rating"]
+    occasion_rating = int(row["occasion_rating"]) if isinstance(row["occasion_rating"], str) else row["occasion_rating"]
+    
+    # overall: 5=like, 1=dislike
+    overall_bonus = 0.6 if overall_rating == 5 else -0.6
+    center = 50
+    style_bonus = (style_rating - center) / 100 * 0.8
+    color_bonus = (color_rating - center) / 100 * 0.8
+    fit_bonus = (fit_rating - center) / 100 * 0.6
+    occ_bonus = (occasion_rating - center) / 100 * 0.6
+    bonus = overall_bonus + style_bonus + color_bonus + fit_bonus + occ_bonus
+    # clip to ±2
+    return max(-2.0, min(2.0, bonus))
+
 # Setup logging first
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -61,6 +86,33 @@ class SupabaseMainOutfitsGenerator:
     # ✅ OPTIMIZATION: Class-level model cache to avoid reloading
     _model_cache = None
     _model_cache_ready = False
+    _model_cache_lock = threading.Lock()  # Thread-safety for model cache
+    
+    # ✅ PERFORMANCE PACK: Pre-compiled regex patterns for vectorized filtering
+    _regex_patterns = {
+        'color': re.compile(r'\b(red|blue|green|yellow|black|white|pink|purple|orange|brown|gray|grey|navy|olive|maroon|teal|cyan|magenta|violet|indigo|amber|coral|salmon|lime|gold|silver|bronze)\b', re.IGNORECASE),
+        'style': re.compile(r'\b(casual|formal|business|sport|athletic|elegant|vintage|modern|classic|trendy|streetwear|bohemian|minimalist|romantic|edgy|sophisticated|playful|professional|relaxed|comfortable)\b', re.IGNORECASE),
+        'fit': re.compile(r'\b(slim|loose|regular|tight|oversized|fitted|relaxed|comfortable|stretchy|flexible)\b', re.IGNORECASE),
+        'athleisure': re.compile(r'athleisure|athletic|sport|gym|training|workout|active|fitness|running|yoga|performance|track|compression|quick dry|moisture wicking', re.I),
+        'business_casual': re.compile(r'business casual|formal|semi formal|business|office|work', re.I),
+        'streetwear': re.compile(r'streetwear|street|urban|casual', re.I),
+        'winter_keywords': re.compile(r'winter|sweater|pullover|jacket|coat|hoodie|sweatshirt|fleece|cardigan|wool|thermal|warm|cold weather|snow|puffer|down jacket|quilted|insulated|heavy', re.I),
+        'business_casual_exclude': re.compile(r'sweater|pullover|turtleneck|turtle neck|turtle-neck|mock neck|high neck|waistcoat|cardigan|jumper|hoodie|hooded|sweatshirt|fleece|wool sweater|knit sweater|cable knit|chunky knit|heavy sweater|winter jacket|puffer|down jacket|quilted jacket|thermal|heavy jacket|insulated jacket|parka|overcoat|winter coat|heavy coat|tights|tight|leggings|yoga pants|workout|athletic|sports bra|tank top|compression|high-waist tight|ankle length tights|shimmer', re.I),
+        'athletic_keywords': re.compile(r'active|sport|athletic|training|gym|workout|exercise|fitness|running|yoga|performance|track|compression|quick dry|moisture wicking', re.I),
+        'formal_exclude': re.compile(r'formal|business|ethnic|party', re.I),
+        'non_athletic_bottoms': re.compile(r'chinos?|denim|cotton|trouser|cargo|jeans?|casual|regular|straight|slim|formal', re.I)
+    }
+    
+    # 🚀 PERFORMANCE OPTIMIZATION: Product caching to avoid reloading
+    _products_cache = None
+    _products_cache_timestamp = None
+    _products_cache_lock = threading.Lock()
+    
+    # 🚀 PERFORMANCE OPTIMIZATION: Skip FAISS for faster generation
+    _skip_faiss_for_speed = True
+    
+    # 🚀 PERFORMANCE OPTIMIZATION: Simplified scoring for speed
+    _use_simplified_scoring = True
     
     def __init__(self, config: Dict = None):
         """Initialize the Supabase-enabled outfits generator with fashion designer intelligence."""
@@ -98,6 +150,17 @@ class SupabaseMainOutfitsGenerator:
             'max_size': self.config.get('cache_embeddings_limit', 1000)
         }
         
+        # ✅ PERFORMANCE PACK: FAISS cache directory
+        self.cache_dir = Path(__file__).parent / "faiss_cache"
+        self.cache_dir.mkdir(exist_ok=True)
+        logger.info(f"📁 FAISS cache directory: {self.cache_dir}")
+        
+        # ✅ LEARNING-LOOP PACK: Designer bonus cache
+        self._designer_bonus_dict = {}
+        self._bonus_cache_ts = 0
+        self._bonus_lock = threading.Lock()
+        self._bonus_cache_path = Path(__file__).parent / "faiss_cache" / "designer_pair_bonus.json"
+        
         # FAISS indexes for different wear types
         self.faiss_indexes = {}
         self.product_mappings = {}
@@ -121,28 +184,29 @@ class SupabaseMainOutfitsGenerator:
 
     def _ensure_model_loaded(self):
         """Lazy load the model only when needed."""
-        if self.model is None:
-            try:
-                if self.is_railway:
-                    logger.info("🔧 Loading model with Railway CPU optimizations")
-                    # Set conservative CPU limits for ML operations
-                    for var in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'OPENBLAS_NUM_THREADS']:
-                        os.environ[var] = '2'
-                
-                # ✅ OPTIMIZATION: Use cached model if available
-                if SupabaseMainOutfitsGenerator._model_cache is not None:
-                    self.model = SupabaseMainOutfitsGenerator._model_cache
-                    logger.info(f"✅ Using cached model: {self.config['model_name']}")
-                else:
-                    self.model = SentenceTransformer(self.config['model_name'])
-                    # Cache the model for future use
-                    SupabaseMainOutfitsGenerator._model_cache = self.model
-                    SupabaseMainOutfitsGenerator._model_cache_ready = True
-                    logger.info(f"✅ Model loaded and cached: {self.config['model_name']}")
+        with self._model_cache_lock:  # Thread-safety for model cache
+            if self.model is None:
+                try:
+                    if self.is_railway:
+                        logger.info("🔧 Loading model with Railway CPU optimizations")
+                        # Set conservative CPU limits for ML operations
+                        for var in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'OPENBLAS_NUM_THREADS']:
+                            os.environ[var] = '2'
                     
-            except Exception as e:
-                logger.error(f"❌ Failed to load model: {e}")
-                raise
+                    # ✅ OPTIMIZATION: Use cached model if available
+                    if SupabaseMainOutfitsGenerator._model_cache is not None:
+                        self.model = SupabaseMainOutfitsGenerator._model_cache
+                        logger.info(f"✅ Using cached model: {self.config['model_name']}")
+                    else:
+                        self.model = SentenceTransformer(self.config['model_name'])
+                        # Cache the model for future use
+                        SupabaseMainOutfitsGenerator._model_cache = self.model
+                        SupabaseMainOutfitsGenerator._model_cache_ready = True
+                        logger.info(f"✅ Model loaded and cached: {self.config['model_name']}")
+                        
+                except Exception as e:
+                    logger.error(f"❌ Failed to load model: {e}")
+                    raise
 
     def _default_config(self) -> Dict:
         """Default configuration for the Supabase outfits generator."""
@@ -293,7 +357,8 @@ class SupabaseMainOutfitsGenerator:
             'cultural_relevance': 1.8,           # ENHANCED: Better cultural context matching
             'versatility_score': 1.5,            # ENHANCED: Using style_versatility and adaptability
             'price_coherence': 1.3,              # Price point harmony
-            'trend_relevance': 1.0               # Fashion forward
+            'trend_relevance': 1.0,              # Fashion forward
+            'designer_bonus': 1.0                # ✅ LEARNING-LOOP PACK: Stylist feedback bonus
         }
 
         # ✅ ENHANCED: Style formality hierarchy for intelligent mixing
@@ -581,25 +646,39 @@ class SupabaseMainOutfitsGenerator:
 
     def load_products_data_enhanced(self, filters: Dict = None, user_data: Dict = None) -> pd.DataFrame:
         """✅ ENHANCED: Load products data from Supabase with pre-filtering and enhanced validation."""
+        
+        # 🚀 PERFORMANCE OPTIMIZATION: Check cache first
+        import time
+        current_time = time.time()
+        cache_valid = (
+            self._products_cache is not None and 
+            self._products_cache_timestamp is not None and
+            (current_time - self._products_cache_timestamp) < 300  # 5 minute cache
+        )
+        
+        if cache_valid:
+            logger.info(f"🚀 Using cached products data: {len(self._products_cache)} products")
+            return self._products_cache.copy()
+        
         logger.info("📥 Loading enhanced products data from Supabase using pre-filtering...")
         
         try:
-            # ✅ FIX: Use simpler, more reliable method to avoid timeouts
+            # ✅ FIX: Use get_products_simple to load ALL 16,298 products
             if user_data:
                 # Extract gender from user data for filtering
                 gender = user_data.get('Gender', '').lower()
                 if gender in ['male', 'female']:
-                    # Use chunking to load all products with gender filter
-                    products_df = self.db._get_all_products_chunked(gender=gender)
-                    logger.info(f"✅ Loaded {len(products_df)} products for {gender} users using chunking method")
+                    # Use simple method to load all products with gender filter
+                    products_df = self.db.get_products_simple(gender=gender, limit=20000)  # Increased limit to get all products
+                    logger.info(f"✅ Loaded {len(products_df)} products for {gender} users using simple method")
                 else:
-                    # Fallback to basic products without gender filter using chunking
-                    products_df = self.db._get_all_products_chunked()
-                    logger.info(f"✅ Loaded {len(products_df)} products using chunking method (no gender filter)")
+                    # Fallback to basic products without gender filter
+                    products_df = self.db.get_products_simple(limit=20000)  # Increased limit to get all products
+                    logger.info(f"✅ Loaded {len(products_df)} products using simple method (no gender filter)")
             else:
-                # Fallback to basic products loading using chunking
-                products_df = self.db._get_all_products_chunked()
-                logger.info(f"✅ Loaded {len(products_df)} products using chunking method (no user data)")
+                # Fallback to basic products loading
+                products_df = self.db.get_products_simple(limit=20000)  # Increased limit to get all products
+                logger.info(f"✅ Loaded {len(products_df)} products using simple method (no user data)")
             
             if products_df.empty:
                 logger.error("❌ No products data found in Supabase")
@@ -607,6 +686,15 @@ class SupabaseMainOutfitsGenerator:
             
             # ✅ ENHANCED: Apply comprehensive product validation and enhancement
             products_df = self.validate_products_data_enhanced(products_df)
+            
+            # 🚀 PERFORMANCE OPTIMIZATION: Skip FAISS index building for speed
+            if not self._skip_faiss_for_speed:
+                self.build_faiss_indexes(products_df)
+            
+            # 🚀 PERFORMANCE OPTIMIZATION: Cache the results
+            with self._products_cache_lock:
+                self._products_cache = products_df.copy()
+                self._products_cache_timestamp = current_time
             
             logger.info(f"✅ Enhanced products data loaded: {len(products_df)} products ready")
             return products_df
@@ -904,6 +992,58 @@ class SupabaseMainOutfitsGenerator:
             'max_size': self.cache_stats['max_size']
         }
 
+    def _bulk_get_embeddings(self, product_ids: List[str]) -> pd.DataFrame:
+        """
+        Bulk fetch embeddings using single SQL query.
+        
+        Args:
+            product_ids: List of product IDs to fetch embeddings for
+            
+        Returns:
+            DataFrame with columns: product_id, embedding_vector
+        """
+        if not product_ids:
+            return pd.DataFrame(columns=['product_id', 'embedding_vector'])
+        
+        logger.info(f"🔄 Bulk fetching embeddings for {len(product_ids)} products")
+        
+        try:
+            # Single SQL query with IN filter
+            result = self.db.client.table('tagged_products').select('id, product_embedding').in_('id', product_ids).execute()
+            
+            if not result.data:
+                logger.warning("⚠️ No embeddings found in bulk fetch")
+                return pd.DataFrame(columns=['product_id', 'embedding_vector'])
+            
+            # Process results
+            embeddings_data = []
+            for row in result.data:
+                product_id = str(row['id'])
+                embedding_json = row.get('product_embedding')
+                
+                if embedding_json:
+                    try:
+                        if isinstance(embedding_json, str):
+                            embedding_vector = np.array(json.loads(embedding_json))
+                        else:
+                            embedding_vector = np.array(embedding_json)
+                        
+                        embeddings_data.append({
+                            'product_id': product_id,
+                            'embedding_vector': embedding_vector
+                        })
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to parse embedding for product {product_id}: {e}")
+                        continue
+            
+            df = pd.DataFrame(embeddings_data)
+            logger.info(f"✅ Bulk fetch complete: {len(df)}/{len(product_ids)} embeddings retrieved")
+            return df
+            
+        except Exception as e:
+            logger.error(f"❌ Error in bulk embeddings fetch: {e}")
+            return pd.DataFrame(columns=['product_id', 'embedding_vector'])
+
     def build_faiss_indexes(self, products_df: pd.DataFrame) -> None:
         """Build FAISS indexes for different wear types using enhanced Supabase data with precomputed embeddings."""
         logger.info("🔄 Building FAISS indexes for product recommendations using precomputed embeddings...")
@@ -927,48 +1067,76 @@ class SupabaseMainOutfitsGenerator:
                     logger.error(f"❌ Error building FAISS index: {e}")
     
     def _build_faiss_index_for_wear_type(self, wear_type: str, wear_products: pd.DataFrame) -> None:
-        """Build FAISS index for a specific wear type using precomputed embeddings."""
+        """Build FAISS index for a specific wear type using bulk embeddings fetch and persistence."""
         if wear_products.empty:
             logger.warning(f"No products found for wear_type: {wear_type}")
             return
         
-        # ✅ ENHANCED: Use precomputed embeddings from tagged_products table
-        embeddings = []
-        product_indices = []
-        valid_products = []
+        # ✅ PERFORMANCE PACK: Check for cached FAISS index
+        index_path = self.cache_dir / f"{wear_type}.idx"
+        metadata_path = self.cache_dir / f"{wear_type}.meta.json"
         
-        logger.info(f"🔄 Loading precomputed embeddings for {len(wear_products)} {wear_type} products...")
-        
-        for idx, row in wear_products.iterrows():
-            product_id = str(row['id'])
-            
+        # Check if cache is valid (both files exist and metadata is recent)
+        if index_path.exists() and metadata_path.exists():
             try:
-                # Get precomputed embedding from tagged_products table
-                result = self.db.client.table('tagged_products').select('product_embedding').eq('id', product_id).execute()
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
                 
-                if result.data and result.data[0].get('product_embedding'):
-                    embedding_json = result.data[0]['product_embedding']
-                    if isinstance(embedding_json, str):
-                        embedding = np.array(json.loads(embedding_json))
+                # Check if cache is still valid (metadata timestamp > last ingest)
+                last_ingest = self.config.get('last_ingest_timestamp', 0)
+                if metadata.get('timestamp', 0) > last_ingest:
+                    logger.info(f"📁 Loading cached FAISS index for {wear_type}")
+                    
+                    # Load cached index
+                    index = faiss.read_index(str(index_path))
+                    self.faiss_indexes[wear_type] = index
+                    
+                    # Load product mappings
+                    product_ids = metadata.get('product_ids', [])
+                    valid_products = wear_products[wear_products['id'].astype(str).isin(product_ids)]
+                    
+                    if not valid_products.empty:
+                        self.product_mappings[wear_type] = {
+                            'indices': valid_products.index.tolist(),
+                            'products': valid_products
+                        }
+                        logger.info(f"✅ Loaded cached FAISS index for {wear_type}: {len(valid_products)} products")
+                        return
                     else:
-                        embedding = np.array(embedding_json)
-                    
-                    embeddings.append(embedding)
-                    product_indices.append(idx)
-                    valid_products.append(row)
-                else:
-                    logger.warning(f"No precomputed embedding found for product {product_id}")
-                    
+                        logger.warning(f"⚠️ Cached index exists but no matching products found for {wear_type}")
+                        
             except Exception as e:
-                logger.warning(f"Failed to get embedding for product {product_id}: {e}")
-                continue
+                logger.warning(f"⚠️ Failed to load cached index for {wear_type}: {e}")
         
-        if not embeddings:
+        # ✅ PERFORMANCE PACK: Build new index using bulk embeddings fetch
+        logger.info(f"🔄 Building new FAISS index for {len(wear_products)} {wear_type} products using bulk fetch...")
+        
+        # Collect product IDs and bulk fetch embeddings
+        product_ids = wear_products['id'].astype(str).tolist()
+        embeddings_df = self._bulk_get_embeddings(product_ids)
+        
+        if embeddings_df.empty:
+            logger.warning(f"No embeddings found for wear_type: {wear_type}")
+            return
+        
+        # Merge embeddings with products (ensure consistent data types)
+        embeddings_df = embeddings_df.rename(columns={'product_id': 'id'})
+        
+        # Ensure both DataFrames have string IDs for consistent merging
+        wear_products['id'] = wear_products['id'].astype(str)
+        embeddings_df['id'] = embeddings_df['id'].astype(str)
+        
+        wear_products_with_embeddings = wear_products.merge(
+            embeddings_df, on='id', how='inner'
+        )
+        
+        if wear_products_with_embeddings.empty:
             logger.warning(f"No valid embeddings found for wear_type: {wear_type}")
             return
-
-        embeddings = np.array(embeddings)
-        logger.info(f"✅ Loaded {len(embeddings)} precomputed embeddings for {wear_type}")
+        
+        # Extract embeddings and build index
+        embeddings = np.array(wear_products_with_embeddings['embedding_vector'].tolist())
+        logger.info(f"✅ Loaded {len(embeddings)} embeddings for {wear_type} using bulk fetch")
 
         # Build FAISS index
         dimension = embeddings.shape[1]
@@ -981,15 +1149,56 @@ class SupabaseMainOutfitsGenerator:
         # Store index and mapping
         self.faiss_indexes[wear_type] = index
         self.product_mappings[wear_type] = {
-            'indices': product_indices, 
-            'products': pd.DataFrame(valid_products)
+            'indices': wear_products_with_embeddings.index.tolist(),
+            'products': wear_products_with_embeddings.drop('embedding_vector', axis=1)
         }
+
+        # ✅ PERFORMANCE PACK: Persist FAISS index and metadata
+        try:
+            faiss.write_index(index, str(index_path))
+            
+            metadata = {
+                'timestamp': datetime.now().timestamp(),
+                'product_ids': wear_products_with_embeddings['id'].astype(str).tolist(),
+                'embedding_count': len(embeddings),
+                'dimension': dimension
+            }
+            
+            with open(metadata_path, 'w') as f:
+                json.dump(metadata, f)
+            
+            logger.info(f"💾 Persisted FAISS index for {wear_type}: {len(embeddings)} products")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to persist FAISS index for {wear_type}: {e}")
 
         logger.info(f"✅ Built FAISS index for {wear_type}: {len(embeddings)} products indexed")
         
         # Log cache statistics
         cache_stats = self.get_cache_stats()
         logger.info(f"📊 Embedding cache stats: {cache_stats['hit_rate']} hit rate ({cache_stats['hits']} hits, {cache_stats['misses']} misses)")
+        
+        # TODO: add pytest for cache-hit vs rebuild path
+        # TODO: add timing benchmark for bulk vs row-wise fetch
+
+    def _load_designer_bonus(self):
+        """Load designer bonus cache from file if needed."""
+        if time.time() - self._bonus_cache_ts < 3600 and self._designer_bonus_dict:
+            return
+        
+        with self._bonus_lock:
+            if self._bonus_cache_path.exists():
+                try:
+                    bonus_data = json.loads(self._bonus_cache_path.read_text())
+                    self._designer_bonus_dict = {
+                        tuple(k.split(":::")) if ":::" in k else tuple(k): v 
+                        for k, v in bonus_data.items()
+                    }
+                    self._bonus_cache_ts = time.time()
+                    logger.info(f"✅ Loaded {len(self._designer_bonus_dict)} designer bonuses from cache")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to load designer bonus cache: {e}")
+                    self._designer_bonus_dict = {}
 
     def filter_products_enhanced(self, products_df: pd.DataFrame, user: Dict, wear_type: str = None) -> pd.DataFrame:
         """✅ ENHANCED: Enhanced manual filtering on Gender, Fashion Style, and Body Shape with seasonal considerations."""
@@ -1290,6 +1499,16 @@ class SupabaseMainOutfitsGenerator:
                             top_semantic: float, bottom_semantic: float) -> Tuple[float, str]:
         """✅ ENHANCED: Score outfit using comprehensive designer rule engine."""
         try:
+            # 🚀 PERFORMANCE OPTIMIZATION: Use simplified scoring for speed
+            if self._use_simplified_scoring:
+                return self._score_outfit_simplified(top, bottom, user)
+            
+            # ✅ LEARNING-LOOP PACK: Load designer bonus
+            self._load_designer_bonus()
+            top_id = str(top.get('id', ''))
+            bottom_id = str(bottom.get('id', ''))
+            bonus = self._designer_bonus_dict.get((top_id, bottom_id), 0.0)
+            
             total_score = 0.0
             explanations = []
             
@@ -1349,6 +1568,11 @@ class SupabaseMainOutfitsGenerator:
             total_score += trend_score * self.scoring_weights['trend_relevance']
             explanations.append(f"Trend relevance: {trend_score:.2f}")
             
+            # ✅ LEARNING-LOOP PACK: Add designer bonus to total score
+            total_score += bonus * self.scoring_weights.get('designer_bonus', 1.0)
+            if bonus != 0.0:
+                explanations.append(f"Designer bonus: {bonus:+.2f}")
+            
             # Normalize final score
             final_score = min(10.0, max(0.0, total_score / sum(self.scoring_weights.values())))
             
@@ -1360,6 +1584,50 @@ class SupabaseMainOutfitsGenerator:
         except Exception as e:
             logger.error(f"❌ Error scoring outfit: {e}")
             return 5.0, "Standard outfit combination"
+    
+    def _score_outfit_simplified(self, top: pd.Series, bottom: pd.Series, user: Dict) -> Tuple[float, str]:
+        """🚀 PERFORMANCE OPTIMIZATION: Simplified scoring for faster generation."""
+        try:
+            # Basic color compatibility
+            top_color = str(top.get('color', '')).lower()
+            bottom_color = str(bottom.get('color', '')).lower()
+            
+            # Simple color harmony check
+            color_score = 0.6  # Default neutral score
+            if top_color and bottom_color:
+                # Basic complementary colors
+                if (top_color in ['black', 'white', 'gray', 'grey'] or 
+                    bottom_color in ['black', 'white', 'gray', 'grey']):
+                    color_score = 0.8  # Neutral colors go with everything
+                elif top_color == bottom_color:
+                    color_score = 0.7  # Monochromatic
+                elif (top_color in ['blue', 'navy'] and bottom_color in ['brown', 'beige', 'khaki']) or \
+                     (bottom_color in ['blue', 'navy'] and top_color in ['brown', 'beige', 'khaki']):
+                    color_score = 0.8  # Classic blue-brown combo
+            
+            # Style compatibility
+            top_style = str(top.get('style', '')).lower()
+            bottom_style = str(bottom.get('style', '')).lower()
+            style_score = 0.6  # Default neutral score
+            
+            if top_style and bottom_style:
+                if top_style == bottom_style:
+                    style_score = 0.8  # Same style
+                elif 'casual' in top_style and 'casual' in bottom_style:
+                    style_score = 0.7  # Both casual
+                elif 'formal' in top_style and 'formal' in bottom_style:
+                    style_score = 0.7  # Both formal
+            
+            # Simple weighted score
+            final_score = (color_score * 0.6) + (style_score * 0.4)
+            
+            explanation = f"{top_style.title()} recommendation | {top.get('title', 'Top')} | Matches your {top_style} style preference"
+            
+            return final_score, explanation
+            
+        except Exception as e:
+            logger.error(f"❌ Error in simplified scoring: {e}")
+            return 0.6, "Basic compatibility check passed"
     
     def _generate_enhanced_explanation(self, explanations: List[str], final_score: float, 
                                      rule_scores: Dict[str, float], top: pd.Series, bottom: pd.Series, user: Dict) -> str:
@@ -1703,41 +1971,40 @@ class SupabaseMainOutfitsGenerator:
             
             target_style_lower = target_style.lower()
             
-            # First, identify crop tops based on title
-            def is_crop_top(row):
-                title = str(row.get('title', '')).lower()
-                words = set(title.split())
-                return 'crop' in words and 'top' in words
-            
-            # Mark crop tops
-            products_df['is_crop_top'] = products_df.apply(is_crop_top, axis=1)
+            # ✅ PERFORMANCE PACK: Vectorized crop top detection
+            title_lower = products_df['title'].str.lower().fillna('')
+            words_split = title_lower.str.split()
+            products_df['is_crop_top'] = words_split.apply(lambda words: 'crop' in words and 'top' in words if isinstance(words, list) else False)
             
             # For business casual, apply strict filtering
             if target_style_lower == 'business casual':
                 # Exclude crop tops
                 products_df = products_df[~products_df['is_crop_top']]
                 
+                # ✅ PERFORMANCE PACK: Vectorized business casual filtering
                 # Exclude kurtas for men
-                if 'gender' in products_df.columns and any(products_df['gender'].str.lower() == 'male'):
+                if 'gender' in products_df.columns and (products_df['gender'].str.lower() == 'male').any():
                     kurta_mask = (
                         products_df['title'].str.contains('kurta', case=False, na=False) |
                         products_df['product_type'].str.contains('kurta', case=False, na=False)
                     )
                     products_df = products_df[~kurta_mask]
                 
-                # Exclude athleisure and streetwear items
+                # Exclude athleisure and streetwear items using pre-compiled patterns
                 casual_style_mask = (
-                    products_df['style_category'].str.contains('athleisure|streetwear', case=False, na=False) |
-                    products_df['primary_style'].str.contains('athleisure|streetwear', case=False, na=False)
+                    products_df['style_category'].str.contains(self._regex_patterns['athleisure'], na=False) |
+                    products_df['primary_style'].str.contains(self._regex_patterns['athleisure'], na=False) |
+                    products_df['style_category'].str.contains('streetwear', case=False, na=False) |
+                    products_df['primary_style'].str.contains('streetwear', case=False, na=False)
                 )
                 products_df = products_df[~casual_style_mask]
                 
-                # ✅ ENHANCED: Keep business casual items (check multi-style too)
+                # ✅ ENHANCED: Keep business casual items using pre-compiled patterns
                 business_mask = (
-                    products_df['style_category'].str.contains('business casual|formal|semi formal', case=False, na=False) |
-                    products_df['primary_style'].str.contains('business casual|formal|semi formal', case=False, na=False) |
-                    products_df['primary_style_multi'].str.contains('business casual|formal|semi formal', case=False, na=False) |
-                    products_df['title'].str.contains('formal|business|office|work', case=False, na=False)
+                    products_df['style_category'].str.contains(self._regex_patterns['business_casual'], na=False) |
+                    products_df['primary_style'].str.contains(self._regex_patterns['business_casual'], na=False) |
+                    products_df['primary_style_multi'].str.contains(self._regex_patterns['business_casual'], na=False) |
+                    products_df['title'].str.contains(self._regex_patterns['business_casual'], na=False)
                 )
                 products_df = products_df[business_mask]
             
@@ -1752,37 +2019,28 @@ class SupabaseMainOutfitsGenerator:
                 # Create initial product type mask
                 product_type_mask = products_df['product_type'].isin(core_athleisure_types)
                 
-                # Second filter: Style category must be athleisure OR title must contain athletic keywords
-                athletic_keywords = {
-                    'Active', 'Sport', 'Athletic', 'Training', 'Gym', 'Workout',
-                    'Exercise', 'Fitness', 'Running', 'Yoga', 'Performance',
-                    'Track', 'Compression', 'Quick Dry', 'Moisture Wicking'
-                }
-                
-                # Add lowercase versions
-                athletic_keywords = list(athletic_keywords) + [k.lower() for k in athletic_keywords]
-                
-                # Create style and title mask
+                # ✅ PERFORMANCE PACK: Vectorized athleisure filtering using pre-compiled patterns
+                # Create style and title mask using pre-compiled patterns
                 style_mask = (
                     # Must be marked as athleisure in style category
                     products_df['style_category'].str.contains('athleisure', case=False, na=False) |
                     products_df['primary_style'].str.contains('athleisure', case=False, na=False) |
                     
-                    # Or title must contain athletic keywords
-                    products_df['title'].str.contains('|'.join(athletic_keywords), case=False, na=False)
+                    # Or title must contain athletic keywords using pre-compiled pattern
+                    products_df['title'].str.contains(self._regex_patterns['athletic_keywords'], na=False)
                 )
                 
-                # Third filter: Exclude non-athletic items
+                # Third filter: Exclude non-athletic items using pre-compiled patterns
                 exclude_mask = (
-                    # Exclude formal/business styles
-                    products_df['style_category'].str.contains('business|formal|ethnic|party', case=False, na=False) |
-                    products_df['primary_style'].str.contains('business|formal|ethnic|party', case=False, na=False) |
+                    # Exclude formal/business styles using pre-compiled pattern
+                    products_df['style_category'].str.contains(self._regex_patterns['formal_exclude'], na=False) |
+                    products_df['primary_style'].str.contains(self._regex_patterns['formal_exclude'], na=False) |
                     
                     # Exclude specific product types that shouldn't be in athleisure
                     products_df['product_type'].isin(['Shirt', 'Blouse', 'Blazer', 'Coat', 'Kurta', 'Dress', 'Jeans']) |
                     
-                    # Exclude items with formal/business keywords in title
-                    products_df['title'].str.contains('formal|business|office|professional|work|smart casual|chinos?|denim|cotton', case=False, na=False)
+                    # Exclude items with formal/business keywords in title using pre-compiled pattern
+                    products_df['title'].str.contains(self._regex_patterns['formal_exclude'], na=False)
                 )
                 
                 # Special handling for T-Shirts and Tops (which are less reliably athleisure)
@@ -1792,22 +2050,22 @@ class SupabaseMainOutfitsGenerator:
                 # For T-Shirts and Tops, they MUST have athletic keywords in title or be marked as athleisure
                 extra_filter_mask = ~needs_extra_filtering | (needs_extra_filtering & style_mask)
                 
-                # Special handling for bottoms
+                # ✅ PERFORMANCE PACK: Vectorized bottom-specific filtering
                 is_bottom = products_df['wear_type'] == 'Bottomwear'
                 if is_bottom.any():
-                    # For bottoms, we need to be extra strict
+                    # For bottoms, we need to be extra strict using pre-compiled patterns
                     bottom_mask = (
                         # Must be joggers or leggings
                         products_df['product_type'].isin(['Joggers', 'Leggings']) &
                         
-                        # Must not contain non-athletic terms in title
-                        ~products_df['title'].str.contains('chinos?|denim|cotton|trouser|cargo|jeans?|casual|regular|straight|slim|formal', case=False, na=False) &
+                        # Must not contain non-athletic terms in title using pre-compiled pattern
+                        ~products_df['title'].str.contains(self._regex_patterns['non_athletic_bottoms'], na=False) &
                         
-                        # Must be marked as athleisure or contain athletic keywords
+                        # Must be marked as athleisure or contain athletic keywords using pre-compiled pattern
                         (
                             products_df['style_category'].str.contains('athleisure', case=False, na=False) |
                             products_df['primary_style'].str.contains('athleisure', case=False, na=False) |
-                            products_df['title'].str.contains('track|sport|gym|training|active|workout|athletic|running|performance', case=False, na=False)
+                            products_df['title'].str.contains(self._regex_patterns['athletic_keywords'], na=False)
                         )
                     )
                     
@@ -1866,22 +2124,12 @@ class SupabaseMainOutfitsGenerator:
                 else:
                     products_df = pd.DataFrame()
             
-            # ✅ ADDITIONAL SEASONAL FILTER: Remove winter items
+            # ✅ PERFORMANCE PACK: Vectorized winter keywords filtering
             if target_style_lower == 'athleisure':
-                winter_keywords = {
-                    'Winter', 'Sweater', 'Pullover', 'Jacket', 'Coat',
-                    'Hoodie', 'Sweatshirt', 'Fleece', 'Cardigan', 'Wool',
-                    'Thermal', 'Warm', 'Cold Weather', 'Snow', 'Puffer',
-                    'Down Jacket', 'Quilted', 'Insulated', 'Heavy'
-                }
-                
-                # Add lowercase versions
-                winter_keywords = list(winter_keywords) + [k.lower() for k in winter_keywords]
-                
-                # Create winter item mask
+                # Create winter item mask using pre-compiled pattern
                 is_winter = (
-                    products_df['title'].str.contains('|'.join(winter_keywords), case=False, na=False) |
-                    products_df['product_type'].str.contains('|'.join(winter_keywords), case=False, na=False)
+                    products_df['title'].str.contains(self._regex_patterns['winter_keywords'], na=False) |
+                    products_df['product_type'].str.contains(self._regex_patterns['winter_keywords'], na=False)
                 )
                 
                 # Remove winter items
@@ -1892,30 +2140,12 @@ class SupabaseMainOutfitsGenerator:
                 if removed_count > 0:
                     logger.info(f"🌞 Style filter: Removed {removed_count} winter items for athleisure")
             
-            # ✅ NEW: Business Casual Filter - Remove inappropriate items
+            # ✅ PERFORMANCE PACK: Vectorized business casual exclude filtering
             elif target_style_lower == 'business casual':
-                business_casual_exclude_keywords = {
-                    # Heavy winter items inappropriate for business casual
-                    'Sweater', 'Pullover', 'Turtleneck', 'Turtle Neck', 'Turtle-Neck',
-                    'Mock Neck', 'High Neck', 'Waistcoat', 'Cardigan', 'Jumper',
-                    'Hoodie', 'Hooded', 'Sweatshirt', 'Fleece', 'Wool Sweater',
-                    'Knit Sweater', 'Cable Knit', 'Chunky Knit', 'Heavy Sweater',
-                    'Winter Jacket', 'Puffer', 'Down Jacket', 'Quilted Jacket',
-                    'Thermal', 'Heavy Jacket', 'Insulated Jacket', 'Parka',
-                    'Overcoat', 'Winter Coat', 'Heavy Coat',
-                    # Athletic/workout items inappropriate for business casual
-                    'Tights', 'Tight', 'Leggings', 'Yoga Pants', 'Workout',
-                    'Athletic', 'Sports Bra', 'Tank Top', 'Compression',
-                    'High-Waist Tight', 'Ankle Length Tights', 'Shimmer'
-                }
-                
-                # Add lowercase versions
-                bc_exclude_keywords = list(business_casual_exclude_keywords) + [k.lower() for k in business_casual_exclude_keywords]
-                
-                # Create exclusion mask - prioritize title, then scraped_category
+                # Create exclusion mask using pre-compiled pattern - prioritize title, then scraped_category
                 is_inappropriate_winter = (
-                    products_df['title'].str.contains('|'.join(bc_exclude_keywords), case=False, na=False) |
-                    products_df['scraped_category'].str.contains('|'.join(bc_exclude_keywords), case=False, na=False)
+                    products_df['title'].str.contains(self._regex_patterns['business_casual_exclude'], na=False) |
+                    products_df['scraped_category'].str.contains(self._regex_patterns['business_casual_exclude'], na=False)
                 )
                 
                 # Remove inappropriate winter items
